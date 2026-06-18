@@ -1,0 +1,5 @@
+.DS_Store
+serve.py
+__pycache__/
+*.log
+.vercel

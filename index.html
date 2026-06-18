@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f3efe6">
+<title>Fat Loss Tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦔</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="topbar">
+  <button id="menuBtn" class="icon-btn" aria-label="Menu">☰</button>
+  <div id="pageTitle">Dashboard</div>
+  <button id="levelBadge" class="level-badge" data-route="milestones">LV1</button>
+</header>
+
+<div id="scrim"></div>
+
+<nav id="drawer">
+  <div class="brand"><span class="brand-mark">🦔</span><span class="brand-name">Fat&nbsp;Loss<br>Tracker</span></div>
+  <ul class="nav-list">
+    <li><button data-route="dashboard" class="nav-btn active"><span class="ic">▥</span><span>Dashboard</span></button></li>
+    <li><button data-route="milestones" class="nav-btn"><span class="ic">🏆</span><span>Milestones</span></button></li>
+    <li><button data-route="measurements" class="nav-btn"><span class="ic">⚖</span><span>Log &amp; Measure</span></button></li>
+    <li><button data-route="workouts" class="nav-btn"><span class="ic">💪</span><span>Workouts</span></button></li>
+    <li><button data-route="diary" class="nav-btn"><span class="ic">✎</span><span>Diary</span></button></li>
+    <li><button data-route="projection" class="nav-btn"><span class="ic">📈</span><span>Projection</span></button></li>
+    <li><button data-route="settings" class="nav-btn"><span class="ic">⚙</span><span>Settings</span></button></li>
+  </ul>
+  <div class="nav-foot">Mifflin–St&nbsp;Jeor · adaptive</div>
+</nav>
+
+<div id="app"><main id="main"></main></div>
+<div id="toast" class="toast"></div>
+<script src="app.js?v=6"></script>
+</body>
+</html>

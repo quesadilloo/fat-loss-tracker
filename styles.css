@@ -19,21 +19,15 @@ body{
   font-family:var(--serif);
   color:var(--txt);-webkit-font-smoothing:antialiased;font-size:15px;line-height:1.5;
   min-height:100vh;
-  /* smooth sunset gradient + a soft sun glow */
   background:
-    radial-gradient(120% 70% at 80% 33%, rgba(255,198,122,.45) 0%, rgba(255,198,122,0) 42%),
-    linear-gradient(to bottom,
-      #4a3a6e 0%,
-      #6e4486 14%,
-      #9b3f7c 26%,
-      #c24d6b 36%,
-      #e0673d 46%,
-      #d85f6e 56%,
-      #8f5398 68%,
-      #5a3f7e 80%,
-      #382a52 91%,
-      #271e3c 100%);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='150' height='150' filter='url(%23n)' opacity='0.15'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 90% 60% at 20% 50%, #c0392b 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 50% 85%, #e8661a 0%, transparent 50%),
+    radial-gradient(ellipse 80% 70% at 85% 30%, #4a6fa5 0%, transparent 55%),
+    radial-gradient(ellipse 60% 60% at 60% 50%, #8b4fa8 0%, transparent 50%),
+    linear-gradient(135deg, #6b1a1a 0%, #3a1a5c 100%);
   background-attachment:fixed;
+  background-size:300px 300px, cover, cover, cover, cover, cover;
 }
 
 /* pixel/mono label helper */

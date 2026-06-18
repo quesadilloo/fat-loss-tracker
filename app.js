@@ -528,7 +528,7 @@ function renderDashboard(){
     <div class="card list-card" style="margin-top:16px">
       <div class="lc-head">
         <span class="lc-title"><span class="ic">🎯</span>Today</span>
-        <button class="lc-link" data-go="weight">Log weight</button>
+        <button class="lc-link" data-go="measurements">Log weight</button>
       </div>
       ${lrow('Weigh-in', loggedToday?'✓ done':'—', loggedToday?'done':'dash')}
       <div class="lrow" style="cursor:pointer" data-go="workouts"><span class="lname">Workout · ${esc(woToday.title)}</span><span class="lval ${woDoneToday?'done':'dash'}">${woDoneToday?'✓ done':'—'}</span></div>
@@ -589,7 +589,7 @@ function renderDashboard(){
 
   main().innerHTML=`
     <div class="greet">
-      <img class="avatar" id="charImg" alt="" src="character.png">
+      <img class="avatar" id="charImg" alt="" src="character.png?v=3">
       <div><h1>Let's go, ${esc(nm)}!</h1><div class="sub">${fmtLong(t)}</div></div>
     </div>
 
@@ -824,7 +824,7 @@ function renderMeasurements(){
     [['weight'],...MEASURE_PARTS].forEach(([k])=>{ const v=parseFloat($('#m-'+k).value); if(!isNaN(v)){rec[k]=v;any=true;} });
     if(!any){ toast('Enter at least one value'); return; }
     state.measures=state.measures.filter(m=>m.date!==date);
-    state.measures.push(rec); persist('measures'); toast('Measurement saved'); renderMeasurements();
+    state.measures.push(rec); persist('measures'); toast('Measurement saved'); go('dashboard');
   };
   $('#m-part').onchange=e=>{ measurePart=e.target.value; renderMeasurements(); };
   document.querySelectorAll('[data-del-m]').forEach(b=>b.onclick=()=>{
@@ -889,7 +889,7 @@ function renderDiary(){
     const tags=$('#d-tags').value.split(',').map(t=>t.trim().replace(/^#/,'')).filter(Boolean);
     state.diary=state.diary.filter(d=>d.date!==date);
     state.diary.push({date, content, mood:+mood.value, tags});
-    persist('diary'); toast('Entry saved'); renderDiary();
+    persist('diary'); toast('Entry saved'); go('dashboard');
   };
   const sb=$('#d-search'); sb.oninput=()=>{ diaryQuery=sb.value; const pos=sb.selectionStart; renderDiary(); const n=$('#d-search'); n.focus(); n.setSelectionRange(pos,pos); };
   document.querySelectorAll('[data-del-d]').forEach(b=>b.onclick=()=>{

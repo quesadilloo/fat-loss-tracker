@@ -77,11 +77,14 @@ body{
 /* ---------- LAYOUT ---------- */
 #main{max-width:680px;margin:0 auto;padding:20px 16px 60px;width:100%}
 @media(min-width:1024px){
-  #drawer{transform:translateX(0);box-shadow:none;border-right:1px solid var(--line)}
+  #drawer{transform:translateX(0);box-shadow:none;border-right:1px solid var(--line);transition:transform .22s ease}
   #scrim{display:none}
-  #menuBtn{display:none}
-  #app{padding-left:248px}
-  #topbar{padding-left:262px}
+  #app{padding-left:248px;transition:padding-left .22s ease}
+  #topbar{padding-left:262px;transition:padding-left .22s ease}
+  /* collapsed: slide the sidebar away and reclaim the space */
+  body.nav-collapsed #drawer{transform:translateX(-105%)}
+  body.nav-collapsed #app{padding-left:0}
+  body.nav-collapsed #topbar{padding-left:14px}
 }
 
 /* ---------- HEADINGS ---------- */
@@ -130,10 +133,10 @@ body{
 .lc-title .ic{font-size:15px}
 .lc-link{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--teal-d);background:none;border:0;cursor:pointer;font-weight:700}
 .lc-link:hover{text-decoration:underline}
-.lrow{display:flex;align-items:center;justify-content:space-between;padding:16px 2px;border-bottom:1px solid var(--line)}
+.lrow{display:flex;align-items:center;justify-content:space-between;padding:10px 2px;border-bottom:1px solid var(--line)}
 .lrow:last-child{border-bottom:0}
-.lrow .lname{font-family:var(--serif);font-size:18px;color:var(--txt)}
-.lrow .lval{font-family:var(--mono);font-size:13.5px;letter-spacing:.04em;color:var(--muted);font-weight:700}
+.lrow .lname{font-family:var(--serif);font-size:15px;color:var(--txt)}
+.lrow .lval{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--muted);font-weight:700}
 .lrow .lval.done{color:var(--teal)}
 .lrow .lval.dash{color:var(--faint)}
 

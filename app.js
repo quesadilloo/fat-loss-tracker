@@ -490,7 +490,11 @@ $('#levelBadge').addEventListener('click',()=>go('milestones'));
 /* ---------- drawer ---------- */
 function openDrawer(){ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); }
 function closeDrawer(){ $('#drawer').classList.remove('open'); $('#scrim').classList.remove('show'); }
-$('#menuBtn').addEventListener('click',openDrawer);
+const isDesktop=()=>window.matchMedia('(min-width:1024px)').matches;
+$('#menuBtn').addEventListener('click',()=>{
+  if(isDesktop()) document.body.classList.toggle('nav-collapsed');   // collapse/expand persistent sidebar
+  else openDrawer();                                                 // mobile overlay
+});
 $('#scrim').addEventListener('click',closeDrawer);
 
 /* ============================================================

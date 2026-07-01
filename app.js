@@ -197,7 +197,7 @@ function goalProjection(){
   if(span<=0 || rate<=0) return { reached:true, deficitWeeks:0, calWeeks:0, goalDate:todayISO() };
   const deficitWeeks = span/rate;
   const calWeeks = deficitWeeks*(1 + 1/s.deficitWeeksPerBlock);
-  const goalDate = addDays(s.startDate, Math.round(calWeeks*7));
+  const goalDate = addDays(s.startDate, Math.round((currentWeekIndex() + calWeeks)*7));
   return { reached:false, deficitWeeks, calWeeks, goalDate, daysLeft: Math.max(0, daysBetween(todayISO(), goalDate)) };
 }
 
@@ -208,23 +208,24 @@ function projectionTable(){
   const block = s.deficitWeeksPerBlock;
   const rows = [];
   let wt = currentWeight();   // anchor to actual logged weight
-  const today = todayISO();
+  const startWeek = currentWeekIndex();  // how many weeks since startDate
   let reachedAt = null;
   for(let w=0; w<=52; w++){
-    const isMaint = w>0 && (w % (block+1) === 0);
+    const absW = startWeek + w;          // absolute week number from startDate
+    const isMaint = absW>0 && (absW % (block+1) === 0);
     if(w>0 && !isMaint) wt = Math.max(s.goalWeight, wt - rate);
     const maint = mifflinMaintenance(wt, s);
     let phase, intake;
     if(wt<=s.goalWeight){ phase='Goal'; intake=maint; if(reachedAt===null) reachedAt=w; }
     else if(isMaint){ phase='Maintenance'; intake=maint; }
     else { phase='Deficit'; intake=maint - s.dailyDeficit; }
-    rows.push({ w, date:addDays(today,w*7), wt, maint, intake, phase });
+    rows.push({ w:absW, date:addDays(s.startDate, absW*7), wt, maint, intake, phase });
     if(reachedAt!==null && w>=reachedAt+1) break;
   }
   return rows;
 }
-// week 0 is always today since projectionTable anchors to now
-function currentWeekIndex(){ return 0; }
+// compute which week we're in relative to startDate
+function currentWeekIndex(){ return Math.max(0, Math.floor(daysBetween(state.settings.startDate, todayISO())/7)); }
 
 /* ============================================================
    GAMIFICATION  (streak · XP · level · milestones)
@@ -539,9 +540,9 @@ function renderDashboard(){
       ${lrow("Today's XP", '＋'+g.todayXp+' xp', g.todayXp?'done':'dash')}
     </div>`;
 
-  // This week strip (Mon→Sun) — green if a weigh-in exists that day
-  const labels=['M','T','W','T','F','S','S'];
-  const wkStart=weekStart(t);
+  // This week strip (Sun→Sat) — green if a weigh-in exists that day
+  const labels=['S','M','T','W','T','F','S'];
+  const wkStart=woWeekStart();  // Sunday-anchored
   const set=loggedDates();
   let doneDays=0, strip='';
   for(let i=0;i<7;i++){
@@ -1121,6 +1122,7 @@ let woDay = DAY_KEYS[new Date().getDay()];  // today's weekday key (Sun=0)
 let woEdit = false;
 let woAdmin = false;
 let woSwap = false, woSwapFrom = null;   // tap-to-swap (mobile-friendly)
+let woHistory = false;
 function woWeekStart(){ const d=parseISO(todayISO()); d.setDate(d.getDate()-d.getDay()); return isoOf(d); } // Sunday anchor
 function woDateFor(dayKey){ return addDays(woWeekStart(), DAY_KEYS.indexOf(dayKey)); }
 function reloadWorkouts(){ state.workouts=DB.load('workouts',defaultWorkouts()); if(!state.workouts.defaults) state.workouts.defaults=clone(state.workouts.plan); }
@@ -1149,13 +1151,39 @@ function renderWorkouts(){
         ? `<span class="mono" style="font-size:11px;color:var(--amber)">editing defaults</span><button class="btn sm" id="wo-admin-done">✓ Done</button>`
         : woSwap
           ? `<span class="faint" style="font-size:12px">${woSwapFrom?'Tap another day to swap with '+woSwapFrom:'Tap two days to swap'}</span><button class="btn sm" id="wo-swap-cancel">Cancel</button>`
-          : `<span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn sm" id="wo-swap">⇄ Swap</button><button class="btn sm" id="wo-admin">⚙ Defaults</button><button class="btn sm" id="wo-reset">↺ Reset</button></span>`}
+          : `<span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn sm" id="wo-swap">⇄ Swap</button><button class="btn sm" id="wo-admin">⚙ Defaults</button><button class="btn sm" id="wo-reset">↺ Reset</button><button class="btn sm ${woHistory?'primary':''}" id="wo-history">📋 History</button></span>`}
     </div>
     <div class="wo-tabs">${tabs}</div>
     ${woAdmin ? woEditCard(woDay, state.workouts.defaults[woDay], true)
+      : woHistory ? woHistoryCard()
       : (woEdit ? woEditCard(woDay,w) : woViewCard(woDay,w,date,done,todayKey))}`;
 
   bindWorkouts();
+}
+
+function woHistoryCard(){
+  const log=state.workouts.log;
+  const entries=Object.keys(log).sort((a,b)=>b.localeCompare(a)); // newest first
+  if(!entries.length) return `<div class="wo-card"><div class="empty">No completed workouts yet.</div></div>`;
+  const rows=entries.map(date=>{
+    const dayKey=DAY_KEYS[parseISO(date).getDay()];
+    const title=state.workouts.plan[dayKey]?.title||dayKey;
+    const split=state.workouts.plan[dayKey]?.split||'';
+    return `<div class="lrow" style="border-bottom:1px solid var(--line);padding:10px 4px">
+      <span class="lname" style="display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:14px;font-weight:600">${esc(title)}</span>
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">${esc(split)} · ${dayKey}</span>
+      </span>
+      <span class="lval done">${fmtDate(date,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}</span>
+    </div>`;
+  }).join('');
+  return `<div class="wo-card">
+    <div class="wo-head" style="margin-bottom:8px">
+      <span class="wo-title">Completed Workouts</span>
+      <span class="mono" style="font-size:11px;color:var(--muted)">${entries.length} total</span>
+    </div>
+    ${rows}
+  </div>`;
 }
 
 function woViewCard(dayKey,w,date,done,todayKey){
@@ -1270,8 +1298,9 @@ function bindWorkouts(){
       ()=>{ state.workouts.plan=clone(state.workouts.defaults); persist('workouts'); toast('Reset to default'); renderWorkouts(); });
   };
   // enter / leave the defaults admin view
-  const adminBtn=$('#wo-admin'); if(adminBtn) adminBtn.onclick=()=>{ woAdmin=true; woEdit=false; renderWorkouts(); };
+  const adminBtn=$('#wo-admin'); if(adminBtn) adminBtn.onclick=()=>{ woAdmin=true; woEdit=false; woHistory=false; renderWorkouts(); };
   const adminDone=$('#wo-admin-done'); if(adminDone) adminDone.onclick=()=>{ saveEditorIfOpen(); woAdmin=false; toast('Defaults saved'); renderWorkouts(); };
+  const histBtn=$('#wo-history'); if(histBtn) histBtn.onclick=()=>{ woHistory=!woHistory; woEdit=false; woAdmin=false; renderWorkouts(); };
 
   // drag a day onto another to swap their workouts
   document.querySelectorAll('.wo-tab').forEach(tab=>{

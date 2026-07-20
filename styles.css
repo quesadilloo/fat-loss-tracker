@@ -163,16 +163,16 @@ body{
 /* ---------- STREAK + WEEK ROW ---------- */
 .streak-week-row{display:flex;align-items:stretch;gap:12px}
 .streak-flame-col{display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-width:48px;flex-shrink:0}
-.sflamewrap{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:1}
+.sflamewrap{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:1;margin-bottom:8px}
 .sflame-img{width:auto;height:50px;max-height:50px;image-rendering:pixelated;display:block}
-.sflame-title{font-family:var(--mono);font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:0}
-.sflame-lbl{font-size:9px;font-weight:400;font-family:var(--mono);color:var(--muted);margin-top:0;letter-spacing:.04em}
-.streak-days-col{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between}
+.sflame-title{font-family:var(--mono);font-size:13px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.sflame-lbl{font-size:12px;font-weight:400;font-family:var(--mono);color:var(--faint);margin-top:0;letter-spacing:.04em}
+.streak-days-col{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;padding-top:30px}
 
 /* ---------- WEEK DATE CIRCLES ---------- */
-.wdc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.wdc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;flex:1}
 .wdc-hdr{display:none}
-.wdc-cell{width:100%;aspect-ratio:1;border-radius:14px;border:2.5px solid var(--line2);background:var(--card2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:15px;font-family:var(--mono);font-weight:700;color:var(--muted);cursor:pointer;box-shadow:0 3px 0 var(--line2)}
+.wdc-cell{width:100%;aspect-ratio:unset;height:100%;border-radius:14px;border:2.5px solid var(--line2);background:var(--card2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:15px;font-family:var(--mono);font-weight:700;color:var(--muted);cursor:pointer;box-shadow:0 3px 0 var(--line2)}
 .wdc-cell::before{content:attr(data-label);font-size:13px;font-weight:700;color:var(--muted)}
 .wdc-cell::after{content:'·';font-size:14px;color:var(--line2)}
 .wdc-cell.wdc-done{background:var(--teal);border-color:var(--teal-d);box-shadow:0 2px 0 var(--teal-d)}

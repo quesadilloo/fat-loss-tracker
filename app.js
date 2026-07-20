@@ -599,7 +599,7 @@ function renderDashboard(){
         <div class="streak-flame-col">
           <div class="sflame-title">Your streak</div>
           <div class="sflamewrap">
-            <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="sflame-img" alt="🔥" style="height:70px;width:auto;image-rendering:pixelated">
+            <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="sflame-img" alt="🔥" style="height:90px;width:auto;image-rendering:pixelated">
           </div>
           <div class="sflame-lbl">Week${streak===1?'':'s'}</div>
         </div>

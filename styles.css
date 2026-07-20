@@ -191,9 +191,9 @@ body{
 .sc-label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
 .sc-val{font-size:20px;font-weight:700;color:var(--ink);font-family:var(--mono)}
 .sc-month{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
-.sc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
-.sc-hdr{font-family:var(--mono);font-size:13px;color:var(--muted);text-align:center;padding:2px 0;font-weight:700}
-.sc-cell{width:52px;height:52px;border-radius:50%;border:1.5px solid var(--line2);background:var(--card);display:flex;align-items:center;justify-content:center;font-size:16px;font-family:var(--mono);color:var(--muted);font-weight:700;margin:0 auto}
+.sc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.sc-hdr{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:2px 0;font-weight:700}
+.sc-cell{width:36px;height:36px;border-radius:50%;border:1.5px solid var(--line2);background:var(--card);display:flex;align-items:center;justify-content:center;font-size:12px;font-family:var(--mono);color:var(--muted);font-weight:700;margin:0 auto}
 .sc-cell.sc-done{background:var(--teal);color:#fff;font-weight:700}
 .sc-cell.sc-today{border:1.5px solid #c97a3a;color:#c97a3a;font-weight:700}
 .sc-cell.sc-today.sc-done{border-color:var(--teal-d);color:#fff}

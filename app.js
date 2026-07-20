@@ -1155,11 +1155,11 @@ function renderWorkouts(){
         ? `<span class="mono" style="font-size:11px;color:var(--amber)">editing defaults</span><button class="btn sm" id="wo-admin-done">✓ Done</button>`
         : woSwap
           ? `<span class="faint" style="font-size:12px">${woSwapFrom?'Tap another day to swap with '+woSwapFrom:'Tap two days to swap'}</span><button class="btn sm" id="wo-swap-cancel">Cancel</button>`
-          : `<span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn sm" id="wo-swap">⇄ Swap</button><button class="btn sm" id="wo-admin">⚙ Defaults</button><button class="btn sm" id="wo-reset">↺ Reset</button><button class="btn sm ${woHistory?'primary':''}" id="wo-history">📋 History</button></span>`}
+          : `<span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn sm ${woHistory?'primary':''}" id="wo-history">🔥 Your Streak</button><button class="btn sm" id="wo-swap">⇄ Swap</button><button class="btn sm" id="wo-admin">⚙ Defaults</button><button class="btn sm" id="wo-reset">↺ Reset</button></span>`}
     </div>
     <div class="wo-tabs">${tabs}</div>
     ${woAdmin ? woEditCard(woDay, state.workouts.defaults[woDay], true)
-      : woHistory ? woHistoryCard()
+      : woHistory ? `<div class="card" style="margin-top:14px;padding:18px;border:2.5px solid #222">${woHistoryCard()}</div>`
       : (woEdit ? woEditCard(woDay,w) : woViewCard(woDay,w,date,done,todayKey))}`;
 
   bindWorkouts();
@@ -1310,7 +1310,7 @@ function bindWorkouts(){
       else { woSwapFrom=null; }
       renderWorkouts(); return;
     }
-    saveEditorIfOpen(); woDay=k; if(!woAdmin) woEdit=false; renderWorkouts();
+    saveEditorIfOpen(); woDay=k; woHistory=false; if(!woAdmin) woEdit=false; renderWorkouts();
   });
   const editBtn=document.querySelector('[data-wo-edit]'); if(editBtn) editBtn.onclick=()=>{ woEdit=true; renderWorkouts(); };
   const swapBtn=$('#wo-swap'); if(swapBtn) swapBtn.onclick=()=>{ woSwap=true; woSwapFrom=null; renderWorkouts(); };

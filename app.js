@@ -146,6 +146,8 @@ function mifflinMaintenance(weightKg, s){
   return bmr * s.activityMultiplier;
 }
 function lossRatePerWeek(s){ return s.dailyDeficit*7/KCAL_PER_KG; }
+function todayMultiplier(){ const dk=DAY_KEYS[new Date().getDay()]; return state.workouts.plan[dk]?.activityMult || state.settings.activityMultiplier; }
+function mifflinToday(weightKg){ const s=state.settings; const sexConst=s.gender==='male'?5:-161; const bmr=10*weightKg+6.25*s.height-5*s.age+sexConst; return bmr*todayMultiplier(); }
 
 // 7-day rolling average series over logged weights (chronological)
 // weights are logged in the Measurements tab (single source of truth)
@@ -174,14 +176,15 @@ function latestWeight(){
 function dashboardMetrics(){
   const s = state.settings;
   const cw = currentWeight();
-  const maint = mifflinMaintenance(cw, s);
+  const maint = mifflinToday(cw);          // uses today's day-specific multiplier
+  const maintBase = mifflinMaintenance(cw, s); // global multiplier (for projection)
   const totalLost = s.startWeight - cw;
   const remaining = Math.max(0, cw - s.goalWeight);
   const span = s.startWeight - s.goalWeight;
   const pct = span>0 ? clamp((s.startWeight - cw)/span,0,1) : 0;
   const rate = lossRatePerWeek(s);
   return {
-    cw, maint,
+    cw, maint, maintBase,
     deficitIntake: maint - s.dailyDeficit,
     maintIntake: maint,
     totalLost, remaining, pct, rate,
@@ -207,11 +210,12 @@ function projectionTable(){
   const rate = lossRatePerWeek(s);
   const block = s.deficitWeeksPerBlock;
   const rows = [];
-  let wt = currentWeight();   // anchor to actual logged weight
-  const startWeek = currentWeekIndex();  // how many weeks since startDate
+  let wt = s.startWeight;                 // anchor to settings start weight
+  const startWeek = currentWeekIndex();   // how many weeks since startDate
   let reachedAt = null;
   for(let w=0; w<=52; w++){
-    const absW = startWeek + w;          // absolute week number from startDate
+    const absW = startWeek + w;           // absolute week number from startDate (1-based display)
+    const dispW = absW + 1;               // display as week 1, 2, 3…
     const isMaint = absW>0 && (absW % (block+1) === 0);
     if(w>0 && !isMaint) wt = Math.max(s.goalWeight, wt - rate);
     const maint = mifflinMaintenance(wt, s);
@@ -219,7 +223,7 @@ function projectionTable(){
     if(wt<=s.goalWeight){ phase='Goal'; intake=maint; if(reachedAt===null) reachedAt=w; }
     else if(isMaint){ phase='Maintenance'; intake=maint; }
     else { phase='Deficit'; intake=maint - s.dailyDeficit; }
-    rows.push({ w:absW, date:addDays(s.startDate, absW*7), wt, maint, intake, phase });
+    rows.push({ w:dispW, date:addDays(s.startDate, absW*7), wt, maint, intake, phase });
     if(reachedAt!==null && w>=reachedAt+1) break;
   }
   return rows;
@@ -236,23 +240,38 @@ function workoutsDone(){ return Object.values(state.workouts.log).filter(Boolean
 function loggedDates(){
   return new Set(state.measures.filter(m=>m.weight!=null).map(m=>m.date));
 }
-// consecutive days with a weigh-in, ending today (or yesterday — grace)
-function currentStreak(){
-  const set=loggedDates();
-  if(!set.size) return 0;
-  let cur=todayISO();
-  if(!set.has(cur)) cur=addDays(cur,-1);      // grace: counts if logged yesterday
-  if(!set.has(cur)) return 0;
+// week streak: a week counts if ≥4 workouts logged in that Sun–Sat window
+function weekWorkoutCount(sunISO){
   let n=0;
-  while(set.has(cur)){ n++; cur=addDays(cur,-1); }
+  for(let i=0;i<7;i++) if(state.workouts.log[addDays(sunISO,i)]) n++;
+  return n;
+}
+function currentStreak(){
+  // walk backwards week by week from current week
+  let wk=woWeekStart();
+  let n=0;
+  while(true){
+    const count=weekWorkoutCount(wk);
+    // current (incomplete) week: allow partial credit if on track (≥4 done already counts)
+    if(count>=4){ n++; wk=addDays(wk,-7); }
+    else break;
+  }
   return n;
 }
 function bestStreak(){
-  const ds=[...loggedDates()].sort();
-  let best=0,run=0,prev=null;
-  for(const d of ds){
-    if(prev && daysBetween(prev,d)===1) run++; else run=1;
-    best=Math.max(best,run); prev=d;
+  // find the earliest possible week start
+  const allDates=Object.keys(state.workouts.log).filter(k=>state.workouts.log[k]).sort();
+  if(!allDates.length) return 0;
+  // find sunday of first workout
+  const firstD=new Date(allDates[0]+'T12:00:00');
+  firstD.setDate(firstD.getDate()-firstD.getDay());
+  const firstSun=isoOf(firstD);
+  let best=0,run=0,wk=firstSun;
+  const nowSun=woWeekStart();
+  while(wk<=nowSun){
+    if(weekWorkoutCount(wk)>=4){ run++; best=Math.max(best,run); }
+    else run=0;
+    wk=addDays(wk,7);
   }
   return best;
 }
@@ -392,6 +411,7 @@ function mascotSVG(px){
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const r1=n=>Math.round(n*10)/10;
+const r2=n=>Math.round(n*100)/100;
 const r0=n=>Math.round(n);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -512,50 +532,30 @@ function renderDashboard(){
   const blocksMax=7, lit=Math.min(streak,blocksMax);
   let blocks=''; for(let i=0;i<blocksMax;i++) blocks+=`<i class="${i<lit?'on':''}"></i>`;
 
-  // Today list
   const t=todayISO();
-  const loggedToday=loggedDates().has(t);
-  const wi=currentWeekIndex(), isMaint=wi>0&&(wi%(s.deficitWeeksPerBlock+1)===0);
-  const intake = isMaint ? m.maintIntake : m.deficitIntake;
-  const lastMeas=[...state.measures].sort((a,b)=>a.date<b.date?1:-1)[0];
-  const measAgo=lastMeas?daysBetween(lastMeas.date,t):null;
-  const wroteDiary=state.diary.some(d=>d.date===t);
-  const woTodayKey=DAY_KEYS[new Date().getDay()];
-  const woToday=state.workouts.plan[woTodayKey];
-  const woDoneToday=!!state.workouts.log[t];
 
-  const lrow=(name,val,cls)=>`<div class="lrow"><span class="lname">${name}</span><span class="lval ${cls||''}">${val}</span></div>`;
-  const todayCard=`
-    <div class="card list-card" style="margin-top:16px">
-      <div class="lc-head">
-        <span class="lc-title"><span class="ic">🎯</span>Today</span>
-        <button class="lc-link" data-go="measurements">Log weight</button>
-      </div>
-      ${lrow('Weigh-in', loggedToday?'✓ done':'—', loggedToday?'done':'dash')}
-      <div class="lrow" style="cursor:pointer" data-go="workouts"><span class="lname">Workout · ${esc(woToday.title)}</span><span class="lval ${woDoneToday?'done':'dash'}">${woDoneToday?'✓ done':'—'}</span></div>
-      ${lrow(isMaint?'Phase · maintenance':'Phase · deficit', isMaint?'refeed':'on plan')}
-      ${lrow('Intake target', r0(intake)+' kcal')}
-      ${lrow('Measurements', measAgo==null?'none yet':(measAgo===0?'✓ today':measAgo+'d ago'), measAgo===0?'done':'')}
-      ${lrow('Diary', wroteDiary?'✓ done':'—', wroteDiary?'done':'dash')}
-      ${lrow("Today's XP", '＋'+g.todayXp+' xp', g.todayXp?'done':'dash')}
-    </div>`;
-
-  // This week strip (Sun→Sat) — green if a weigh-in exists that day
+  // This week strip (Sun→Sat) — date-circle style
   const labels=['S','M','T','W','T','F','S'];
-  const wkStart=woWeekStart();  // Sunday-anchored
-  const set=loggedDates();
+  const wkStart=woWeekStart();
+  const todayKey=DAY_KEYS[new Date().getDay()];
   let doneDays=0, strip='';
+  let cells='';
   for(let i=0;i<7;i++){
     const d=addDays(wkStart,i);
-    const done=set.has(d), future=d>t, mark=done?'✓':(future?' ':'·');
-    if(done) doneDays++;
-    const cls=done?'done':(future?'future':'');
-    strip+=`<div class="daybox ${cls}"><span class="dl">${labels[i]}</span><span class="dm">${mark}</span></div>`;
+    const dayKey=DAY_KEYS[i];
+    const woDone=!!state.workouts.log[d];
+    const future=d>t;
+    const isToday=dayKey===todayKey;
+    if(woDone) doneDays++;
+    const dateNum=parseInt(d.slice(8),10);
+    const cls=[woDone?'wdc-done':(future?'wdc-future':''),isToday?'wdc-today':''].join(' ').trim();
+    cells+=`<div class="wdc-cell ${cls}" data-woday="${dayKey}" data-label="${labels[i]}"></div>`;
   }
+  strip=`<div class="wdc-grid">${cells}</div>`;
 
   const cards=`
     <div class="grid cards" style="margin-top:18px">
-      <div class="card metric hl">
+      <div class="card metric hl" style="cursor:pointer" data-go="measurements">
         <div class="k">Weight · latest</div>
         <div class="v">${r1(latestWeight())}<small>${u()}</small></div>
         <div class="d">7-day avg ${r1(m.cw)} · ${r0(m.pct*100)}% to goal (${r1(s.goalWeight)} ${u()})</div>
@@ -566,14 +566,14 @@ function renderDashboard(){
         <div class="v accent">${m.totalLost>=0?'−':'+'}${r1(Math.abs(m.totalLost))}<small>${u()}</small></div>
         <div class="d">${r1(m.remaining)} ${u()} to go</div>
       </div>
-      <div class="card metric">
+      <div class="card metric" style="cursor:pointer" data-go="settings">
         <div class="k">Deficit-day intake</div>
         <div class="v accent">${r0(m.deficitIntake)}<small>kcal</small></div>
         <div class="d">Maint ${r0(m.maint)} − ${s.dailyDeficit}</div>
       </div>
       <div class="card metric">
         <div class="k">Loss rate</div>
-        <div class="v">${r1(m.rate)}<small>${u()}/wk</small></div>
+        <div class="v">${r2(m.rate)}<small>${u()}/wk</small></div>
         <div class="d">${gp.reached?'Goal reached 🎉':'ETA '+fmtDate(gp.goalDate,{month:'short',day:'numeric'})}</div>
       </div>
     </div>`;
@@ -594,22 +594,19 @@ function renderDashboard(){
       <div><h1>Let's go, ${esc(nm)}!</h1><div class="sub">${fmtLong(t)}</div></div>
     </div>
 
-    <div class="streak">
-      <div class="left">
-        <span class="fire">🔥</span>
-        <div><div class="stitle">${streak} day streak</div><div class="sbest">best: ${best}</div></div>
+    <div class="card" style="margin-top:14px;padding:18px;border:2.5px solid #222">
+      <div class="streak-week-row">
+        <div class="streak-flame-col">
+          <div class="sflame-title">Your streak</div>
+          <div class="sflamewrap">
+            <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="sflame-img" alt="🔥" style="height:70px;width:auto;image-rendering:pixelated">
+          </div>
+          <div class="sflame-lbl">Week${streak===1?'':'s'}</div>
+        </div>
+        <div class="streak-days-col">
+          ${strip}
+        </div>
       </div>
-      <div class="blocks">${blocks}</div>
-    </div>
-
-    ${todayCard}
-
-    <div class="card" style="margin-top:14px">
-      <div class="week-head">
-        <span class="lc-title" style="font-size:18px"><span class="ic">📅</span>This Week</span>
-        <span class="mono" style="font-size:11px;color:var(--muted)">${doneDays} day${doneDays===1?'':'s'}</span>
-      </div>
-      <div class="week-strip">${strip}</div>
     </div>
 
     ${cards}
@@ -617,6 +614,9 @@ function renderDashboard(){
     <div class="note" style="margin-top:14px">${nextPhaseNote()}</div>`;
 
   bindGo();
+  document.querySelectorAll('[data-woday]').forEach(box=>{
+    box.onclick=()=>{ woDay=box.dataset.woday; go('workouts'); };
+  });
   processAvatar();
 }
 function nextPhaseNote(){
@@ -990,7 +990,11 @@ function renderSettings(){
       <div class="form">
         ${F('s-start','Start weight ('+u()+')',s.startWeight,'type="number" step="0.1"')}
         ${F('s-goal','Goal weight ('+u()+')',s.goalWeight,'type="number" step="0.1"')}
-        ${F('s-mult','Activity multiplier',s.activityMultiplier,'type="number" step="0.005"','e.g. 1.675 = sedentary + exercise')}
+        <div class="field"><label>Activity multiplier</label>
+          <select id="s-mult">
+            ${[[1.2,'Rest day'],[1.375,'Light walk / stretch'],[1.55,'Gym / moderate cardio'],[1.675,'Hard session / sport'],[1.9,'Extremely active / physical job']]
+              .map(([v,l])=>`<option value="${v}" ${s.activityMultiplier==v?'selected':''}>${v}  ${l}</option>`).join('')}
+          </select></div>
         ${F('s-deficit','Daily deficit (kcal)',s.dailyDeficit,'type="number" step="50"','range 500–1000')}
         ${F('s-block','Deficit weeks per block',s.deficitWeeksPerBlock,'type="number" min="1" max="8"','maintenance every N+1th week')}
         ${F('s-startdate','Start date',s.startDate,'type="date"')}
@@ -1162,27 +1166,34 @@ function renderWorkouts(){
 }
 
 function woHistoryCard(){
-  const log=state.workouts.log;
-  const entries=Object.keys(log).sort((a,b)=>b.localeCompare(a)); // newest first
-  if(!entries.length) return `<div class="wo-card"><div class="empty">No completed workouts yet.</div></div>`;
-  const rows=entries.map(date=>{
-    const dayKey=DAY_KEYS[parseISO(date).getDay()];
-    const title=state.workouts.plan[dayKey]?.title||dayKey;
-    const split=state.workouts.plan[dayKey]?.split||'';
-    return `<div class="lrow" style="border-bottom:1px solid var(--line);padding:10px 4px">
-      <span class="lname" style="display:flex;flex-direction:column;gap:2px">
-        <span style="font-size:14px;font-weight:600">${esc(title)}</span>
-        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em">${esc(split)} · ${dayKey}</span>
-      </span>
-      <span class="lval done">${fmtDate(date,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}</span>
-    </div>`;
-  }).join('');
+  const now=new Date();
+  const year=now.getFullYear(), month=now.getMonth();
+  const monthName=now.toLocaleString('default',{month:'long'});
+  const firstDay=new Date(year,month,1);
+  const startDow=firstDay.getDay();
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const t=todayISO();
+  const streak=currentStreak(), best=Math.max(bestStreak(),streak);
+  let actCount=0;
+  const hdrs=['S','M','T','W','T','F','S'].map(h=>`<div class="sc-hdr">${h}</div>`).join('');
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+=`<div class="sc-cell"></div>`;
+  for(let d=1;d<=daysInMonth;d++){
+    const iso=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const done=!!state.workouts.log[iso];
+    const isToday=iso===t;
+    const future=iso>t;
+    if(done) actCount++;
+    cells+=`<div class="sc-cell ${done?'sc-done':''} ${isToday?'sc-today':''} ${future?'sc-future':''}">${d}</div>`;
+  }
   return `<div class="wo-card">
-    <div class="wo-head" style="margin-bottom:8px">
-      <span class="wo-title">Completed Workouts</span>
-      <span class="mono" style="font-size:11px;color:var(--muted)">${entries.length} total</span>
+    <div class="sc-meta">
+      <div><div class="sc-label">Your Streak</div><div class="sc-val">${streak} Week${streak===1?'':'s'}</div></div>
+      <div><div class="sc-label">Best Streak</div><div class="sc-val">${best} Week${best===1?'':'s'}</div></div>
+      <div><div class="sc-label">This Month</div><div class="sc-val">${actCount} Done</div></div>
     </div>
-    ${rows}
+    <div class="sc-month">${monthName} ${year}</div>
+    <div class="sc-grid">${hdrs}${cells}</div>
   </div>`;
 }
 
@@ -1209,6 +1220,20 @@ function woViewCard(dayKey,w,date,done,todayKey){
         <button class="wo-edit-btn" data-wo-edit title="Admin: edit this day">✎ Edit</button>
       </div>
       <div class="wo-exlist">${ex}</div>
+
+      <div class="wo-mult-wrap">
+        <span class="mono" style="font-size:11px;letter-spacing:.06em;color:var(--muted)">ACTIVITY MULTIPLIER</span>
+        <select id="wo-mult-sel" class="wo-mult-sel">
+          ${[
+            [1.2,  'Rest day'],
+            [1.375,'Light walk / stretch'],
+            [1.55, 'Gym / moderate cardio'],
+            [1.675,'Hard session / sport'],
+            [1.9,  'Extremely active / physical job'],
+          ].map(([v,l])=>`<option value="${v}" ${(w.activityMult||state.settings.activityMultiplier)==v?'selected':''}>${v}   ${l}</option>`).join('')}
+        </select>
+      </div>
+
       <div class="wo-foot">
         <label class="wo-check ${done?'on':''}">
           <input type="checkbox" id="wo-tick" ${done?'checked':''}>
@@ -1318,6 +1343,12 @@ function bindWorkouts(){
       _dragKey=null;
     });
   });
+
+  const multSel=$('#wo-mult-sel');
+  if(multSel) multSel.onchange=()=>{
+    state.workouts.plan[woDay].activityMult=parseFloat(multSel.value);
+    persist('workouts'); toast('Activity multiplier saved');
+  };
 
   const tick=$('#wo-tick');
   if(tick) tick.onchange=()=>{

@@ -63,6 +63,7 @@ let state = {
   measures: DB.load('measures', []),      // [{date,weight,waist,...,notes}]
   diary:    DB.load('diary', []),         // [{date,content,mood,tags[]}]
   workouts: DB.load('workouts', defaultWorkouts()), // {plan:{Mon..Sun}, log:{ISO:true}}
+  bank:     DB.load('bank', {}),          // {sundayISO:{steps:{0..5}, eaten:{0..5}}}  — calorie banking toward Saturday
 };
 
 // weekly workout plan + completion log (the Workouts tab)
@@ -136,6 +137,8 @@ function fmtLong(iso){ return parseISO(iso).toLocaleDateString(undefined,{weekda
 function daysBetween(a,b){ return Math.round((parseISO(b)-parseISO(a))/86400000); }
 // Monday-anchored week start (matches the Mon–Sun convention in the PRD)
 function weekStart(iso){ const d=parseISO(iso); const k=(d.getDay()+6)%7; d.setDate(d.getDate()-k); return isoOf(d); }
+// Sunday-anchored week start (calorie bank: Sun–Fri bank toward Saturday)
+function sundayWeekStart(iso){ const d=parseISO(iso); d.setDate(d.getDate()-d.getDay()); return isoOf(d); }
 
 /* ============================================================
    CALCULATIONS  (mirror the Excel formulas)
@@ -216,7 +219,7 @@ function projectionTable(){
   for(let w=0; w<=52; w++){
     const absW = startWeek + w;           // absolute week number from startDate (1-based display)
     const dispW = absW + 1;               // display as week 1, 2, 3…
-    const isMaint = absW>0 && (absW % (block+1) === 0);
+    const isMaint = (w+1) % (block+1) === 0;
     if(w>0 && !isMaint) wt = Math.max(s.goalWeight, wt - rate);
     const maint = mifflinMaintenance(wt, s);
     let phase, intake;
@@ -492,9 +495,9 @@ function u(){ return state.settings.units; }
    ROUTER
    ============================================================ */
 const routes={ dashboard:renderDashboard, milestones:renderMilestones, weight:renderMeasurements,
-  workouts:renderWorkouts, measurements:renderMeasurements, diary:renderDiary, projection:renderProjection, settings:renderSettings };
+  workouts:renderWorkouts, measurements:renderMeasurements, diary:renderDiary, projection:renderProjection, bank:renderCalorieBank, settings:renderSettings };
 const TITLES={ dashboard:'Dashboard', milestones:'Milestones', weight:'Log & Measure',
-  workouts:'Workouts', measurements:'Log & Measure', diary:'Diary', projection:'Projection', settings:'Settings' };
+  workouts:'Workouts', measurements:'Log & Measure', diary:'Diary', projection:'Projection', bank:'Calorie Bank', settings:'Settings' };
 let route='dashboard';
 function go(r){
   route=r;
@@ -589,23 +592,35 @@ function renderDashboard(){
     </div>`;
 
   main().innerHTML=`
-    <div class="greet">
-      <img class="avatar" id="charImg" alt="" src="character.png?v=3">
-      <div><h1>Let's go, ${esc(nm)}!</h1><div class="sub">${fmtLong(t)}</div></div>
-    </div>
-
-    <div class="card" style="margin-top:14px;padding:18px;border:2.5px solid #222">
-      <div class="streak-week-row">
-        <div class="streak-flame-col">
-          <div class="sflame-title">Your streak</div>
-          <div class="sflamewrap">
-            <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="sflame-img" alt="🔥" style="height:90px;width:auto;image-rendering:pixelated">
+    <div class="greet-hero">
+      <div class="greet-char">
+        <img class="avatar" id="charImg" alt="" src="avatar.png" style="image-rendering:pixelated">
+      </div>
+      <div class="greet-right">
+        <div class="greet-top-stickers">
+          <img src="lets-go-ro.png" class="sticker-letsgo" alt="Let's go, Ro!" style="image-rendering:pixelated">
+          <img src="cats.png" class="sticker-cats" alt="" style="image-rendering:pixelated">
+          <div class="sticker-date-wrap">
+            <img src="date-textbox.png" class="sticker-datebox" alt="" style="image-rendering:pixelated">
+            <div class="datebox-text">${fmtDate(t,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
-          <div class="sflame-lbl">Week${streak===1?'':'s'}</div>
         </div>
-        <div class="streak-days-col">
-          ${strip}
+        <div class="greet-streak-wrap">
+        <div class="card greet-streak-card" style="padding:18px;border:2.5px solid #222">
+        <div class="streak-week-row">
+          <div class="streak-flame-col">
+            <div class="sflame-title">Your streak</div>
+            <div class="sflamewrap">
+              <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="sflame-img" alt="🔥" style="height:90px;width:auto;image-rendering:pixelated">
+            </div>
+            <div class="sflame-lbl">Week${streak===1?'':'s'}</div>
+          </div>
+          <div class="streak-days-col">
+            ${strip}
+          </div>
         </div>
+        </div>
+      </div>
       </div>
     </div>
 
@@ -965,6 +980,79 @@ function download(name,text){
 }
 
 /* ============================================================
+   VIEW: CALORIE BANK
+   ============================================================ */
+const BANK_DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday'];
+const KCAL_PER_STEP=0.04;   // kcal banked per step above baseline
+const STEP_BASELINE=10000;  // steps before banking kicks in
+
+function bankWeek(){
+  const key=sundayWeekStart(todayISO());
+  if(!state.bank[key]) state.bank[key]={steps:{}, eaten:{}};
+  return state.bank[key];
+}
+function bankDayTotal(i,w){
+  const steps=+(w.steps[i]||0), eaten=+(w.eaten[i]||0);
+  const activity=Math.round(Math.max(0,steps-STEP_BASELINE)*KCAL_PER_STEP);
+  return { activity, eaten, total:activity+eaten };
+}
+function renderCalorieBank(){
+  const w=bankWeek();
+
+  main().innerHTML=`
+    <div class="page-head"><div><h1>Calorie Bank</h1><div class="sub">Sun–Fri you bank calories from extra steps and eating under target — spend them on Saturday's dinner out.</div></div></div>
+
+    <div class="grid cards">
+      <div class="card metric hl"><div class="k">Extra available Saturday</div><div class="v" id="bank-total">0<small>kcal</small></div><div class="d">Live total across the week</div></div>
+      <div class="card metric"><div class="k">From activity</div><div class="v accent" id="bank-activity">0<small>kcal</small></div><div class="d">Steps over ${STEP_BASELINE.toLocaleString()}/day</div></div>
+      <div class="card metric"><div class="k">From eating less</div><div class="v accent" id="bank-eaten">0<small>kcal</small></div><div class="d">Under your daily target</div></div>
+    </div>
+
+    <div class="section-title">This week</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Day</th><th class="num">Steps</th><th class="num">Ate less (kcal)</th><th class="num">Banked (kcal)</th></tr></thead>
+      <tbody>${BANK_DAYS.map((d,i)=>`<tr>
+        <td>${d}</td>
+        <td class="num"><input type="number" class="bank-in" data-f="steps" data-i="${i}" min="0" step="100" placeholder="0" value="${w.steps[i]!=null?w.steps[i]:''}" style="width:100px"></td>
+        <td class="num"><input type="number" class="bank-in" data-f="eaten" data-i="${i}" min="0" step="10" placeholder="0" value="${w.eaten[i]!=null?w.eaten[i]:''}" style="width:100px"></td>
+        <td class="num" id="bank-day-${i}">0</td>
+      </tr>`).join('')}
+      <tr class="now"><td>Saturday</td><td colspan="2" class="faint" style="font-size:12px">Dinner-out day — spend the bank</td><td class="num" id="bank-sat">0</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="form-actions" style="margin-top:16px"><button class="btn" id="bank-reset">↺ Reset week</button></div>
+    <div class="faint" style="font-size:12px;margin-top:10px">Banking rate: ${KCAL_PER_STEP} kcal per step above ${STEP_BASELINE.toLocaleString()} steps, plus every kcal eaten under target.</div>`;
+
+  const recalc=()=>{
+    let activity=0, eaten=0;
+    BANK_DAYS.forEach((d,i)=>{
+      const dt=bankDayTotal(i,w);
+      activity+=dt.activity; eaten+=dt.eaten;
+      $('#bank-day-'+i).textContent=dt.total;
+    });
+    const total=activity+eaten;
+    $('#bank-total').innerHTML=total+'<small>kcal</small>';
+    $('#bank-activity').innerHTML=activity+'<small>kcal</small>';
+    $('#bank-eaten').innerHTML=eaten+'<small>kcal</small>';
+    $('#bank-sat').textContent='+'+total;
+  };
+
+  main().querySelectorAll('.bank-in').forEach(inp=>{
+    inp.oninput=()=>{
+      const i=+inp.dataset.i, f=inp.dataset.f, v=inp.value;
+      if(v==='') delete w[f][i]; else w[f][i]=Math.max(0,+v);
+      persist('bank'); recalc();
+    };
+  });
+  $('#bank-reset').onclick=()=>confirmModal('Reset this week\'s calorie bank?',()=>{
+    w.steps={}; w.eaten={}; persist('bank'); renderCalorieBank();
+  });
+
+  recalc();
+}
+
+/* ============================================================
    VIEW: SETTINGS
    ============================================================ */
 function renderSettings(){
@@ -992,7 +1080,7 @@ function renderSettings(){
         ${F('s-goal','Goal weight ('+u()+')',s.goalWeight,'type="number" step="0.1"')}
         <div class="field"><label>Activity multiplier</label>
           <select id="s-mult">
-            ${[[1.2,'Rest day'],[1.375,'Light walk / stretch'],[1.55,'Gym / moderate cardio'],[1.675,'Hard session / sport'],[1.9,'Extremely active / physical job']]
+            ${[[1.2,'Under 5,000 steps — Sedentary'],[1.375,'5,000–7,500 steps — Lightly active'],[1.55,'7,500–10,000 steps — Moderately active'],[1.725,'10,000–12,500 steps — Very active'],[1.9,'12,500+ steps — Extra active']]
               .map(([v,l])=>`<option value="${v}" ${s.activityMultiplier==v?'selected':''}>${v}  ${l}</option>`).join('')}
           </select></div>
         ${F('s-deficit','Daily deficit (kcal)',s.dailyDeficit,'type="number" step="50"','range 500–1000')}
@@ -1060,8 +1148,8 @@ function renderSettings(){
   };
   $('#s-reset').onclick=()=>{
     if(!confirm('Delete ALL tracked data? This cannot be undone.')) return;
-    ['settings','weights','activity','measures','diary'].forEach(k=>localStorage.removeItem('flt_'+k));
-    state={ settings:seedFirstRun(), weights:[], activity:{}, measures:[], diary:[] };
+    ['settings','weights','activity','measures','diary','bank'].forEach(k=>localStorage.removeItem('flt_'+k));
+    state={ settings:seedFirstRun(), weights:[], activity:{}, measures:[], diary:[], bank:{} };
     toast('All data deleted'); go('dashboard');
   };
 }
@@ -1225,11 +1313,11 @@ function woViewCard(dayKey,w,date,done,todayKey){
         <span class="mono" style="font-size:11px;letter-spacing:.06em;color:var(--muted)">ACTIVITY MULTIPLIER</span>
         <select id="wo-mult-sel" class="wo-mult-sel">
           ${[
-            [1.2,  'Rest day'],
-            [1.375,'Light walk / stretch'],
-            [1.55, 'Gym / moderate cardio'],
-            [1.675,'Hard session / sport'],
-            [1.9,  'Extremely active / physical job'],
+            [1.2,  'Under 5,000 steps — Sedentary'],
+            [1.375,'5,000–7,500 steps — Lightly active'],
+            [1.55, '7,500–10,000 steps — Moderately active'],
+            [1.725,'10,000–12,500 steps — Very active'],
+            [1.9,  '12,500+ steps — Extra active'],
           ].map(([v,l])=>`<option value="${v}" ${(w.activityMult||state.settings.activityMultiplier)==v?'selected':''}>${v}   ${l}</option>`).join('')}
         </select>
       </div>

@@ -1,3 +1,13 @@
+@font-face {
+  font-family: 'Minecraft3';
+  src: url('Minecraft3.ttf') format('truetype');
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Determination';
+  src: url('determination.ttf') format('truetype');
+  font-weight: 400;
+}
 :root{
   /* cozy / pixel palette */
   --bg:#f3efe6; --bg2:#ece6d8; --card:#fffefb; --card2:#f7f3ea;
@@ -105,6 +115,17 @@ body{
 
 /* ---------- DASHBOARD: greeting ---------- */
 .greet{display:flex;align-items:center;gap:16px;margin:6px 0 18px}
+.greet-hero{display:flex;align-items:flex-end;gap:8px;margin:6px 0 14px}
+.greet-char{flex-shrink:0;width:130px;margin-top:-60px;margin-left:-12px}
+.greet-right{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:6px;position:relative}
+.greet-top-stickers{display:flex;align-items:flex-end;gap:6px;margin-bottom:8px;flex-wrap:nowrap}
+.sticker-letsgo{height:60px;width:auto;flex-shrink:0;image-rendering:pixelated}
+.sticker-cats{height:56px;width:auto;flex-shrink:0;image-rendering:pixelated}
+.sticker-date-wrap{position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.sticker-datebox{height:60px;width:auto;display:block;image-rendering:pixelated}
+.datebox-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Determination',var(--mono);font-size:11px;color:#111;white-space:nowrap;text-align:center;pointer-events:none}
+.greet-streak-wrap{position:relative;z-index:1}
+.greet-streak-card{flex:1;min-width:0}
 .avatar{width:96px;height:auto;flex:0 0 96px;image-rendering:pixelated;
   filter:drop-shadow(0 0 5px rgba(255,255,255,.45)) drop-shadow(0 0 10px rgba(255,228,196,.3)) drop-shadow(0 5px 9px rgba(35,18,48,.4))}
 .greet h1{font-family:var(--serif);font-size:27px;font-weight:700;color:#fff;line-height:1.05;text-shadow:0 2px 7px rgba(35,18,48,.5)}

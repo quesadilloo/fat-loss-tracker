@@ -64,7 +64,28 @@ let state = {
   diary:    DB.load('diary', []),         // [{date,content,mood,tags[]}]
   workouts: DB.load('workouts', defaultWorkouts()), // {plan:{Mon..Sun}, log:{ISO:true}}
   bank:     DB.load('bank', {}),          // {sundayISO:{steps:{0..5}, eaten:{0..5}}}  — calorie banking toward Saturday
+  layout:   DB.load('layout', {}),        // {key:{x,y,rot,w,h,font}} — draggable dashboard sticker positions
 };
+
+// Bump when avatar.png is swapped. The saved layout stores an explicit w/h from the
+// old art, which would squash the new image — keep the on-screen height and rederive
+// the width from the new aspect ratio, so the avatar stays the size the user set.
+const AVATAR_REV=5, AVATAR_RATIO=291/858;
+(function migrateLayout(){
+  const was=DB.load('avatarRev',1);
+  if(was===AVATAR_REV) return;
+  const L=state.layout, a=L.avatar;
+  if(a){
+    if(a.h) a.w=Math.round(a.h*AVATAR_RATIO);   // rev 2: new art, new aspect ratio
+    if(was<3){ a.x=0; a.y=0; }                  // rev 3: avatar moved below the weight card
+  }
+  if(was<4){                                    // rev 4: date box sticker removed
+    delete L.datebox;                           // target no longer exists
+    delete L.datetext;                          // was offset for the old centred position
+  }
+  DB.save('layout',L);
+  DB.save('avatarRev',AVATAR_REV);
+})();
 
 // weekly workout plan + completion log (the Workouts tab)
 const DAY_KEYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];   // workouts: week starts Sunday
@@ -207,19 +228,21 @@ function goalProjection(){
   return { reached:false, deficitWeeks, calWeeks, goalDate, daysLeft: Math.max(0, daysBetween(todayISO(), goalDate)) };
 }
 
-// Week-by-week projected path starting from current weight/today
+// Week-by-week projected path — anchored to the CURRENT 7-day average (actual progress),
+// starting from the current week, so past weeks aren't re-counted.
 function projectionTable(){
   const s = state.settings;
   const rate = lossRatePerWeek(s);
   const block = s.deficitWeeksPerBlock;
   const rows = [];
-  let wt = s.startWeight;                 // anchor to settings start weight
-  const startWeek = currentWeekIndex();   // how many weeks since startDate
+  let wt = currentWeight();               // anchor to the latest 7-day average (real progress)
+  const startWeek = currentWeekIndex();   // how many whole weeks since startDate (0-based)
   let reachedAt = null;
   for(let w=0; w<=52; w++){
-    const absW = startWeek + w;           // absolute week number from startDate (1-based display)
+    const absW = startWeek + w;           // absolute week index from startDate (0-based)
     const dispW = absW + 1;               // display as week 1, 2, 3…
-    const isMaint = (w+1) % (block+1) === 0;
+    // maintenance aligns to the absolute cycle from the start date, not from today
+    const isMaint = (absW+1) % (block+1) === 0;
     if(w>0 && !isMaint) wt = Math.max(s.goalWeight, wt - rate);
     const maint = mifflinMaintenance(wt, s);
     let phase, intake;
@@ -509,7 +532,7 @@ function go(r){
   routes[r]();
 }
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>go(b.dataset.route)));
-$('#levelBadge').addEventListener('click',()=>go('milestones'));
+$('#levelBadge').addEventListener('click',()=>go('dashboard'));
 
 /* ---------- drawer ---------- */
 function openDrawer(){ $('#drawer').classList.add('open'); $('#scrim').classList.add('show'); }
@@ -581,6 +604,35 @@ function renderDashboard(){
       </div>
     </div>`;
 
+  const wms=weightMilestones();
+  const wReached=wms.filter(m=>m.reached).length;
+  const cur=wms.find(m=>!m.reached);            // current = first unreached milestone
+  const cwNow=currentWeight();
+  const msBlock=`
+    <div class="row-between" style="margin:22px 0 11px">
+      <div class="section-title" style="margin:0">🏆 Milestone</div>
+      <span class="mono" style="font-size:11px;color:var(--faint)">${wReached}/10 reached</span>
+    </div>
+    ${cur?`
+    <div class="msd current">
+      <div class="msd-top">
+        <span class="msd-badge">${cur.i}</span>
+        <span class="msd-label">Milestone ${cur.i} of 10</span>
+        <span class="msd-target">${cur.target}<small>${u()}</small></span>
+      </div>
+      <div class="msd-bar"><i style="width:${r0(cur.pct*100)}%"></i></div>
+      <div class="msd-sub">${r0(cur.pct*100)}% there · ${r1(Math.max(cwNow-cur.target,0))} ${u()} to go</div>
+    </div>`:`
+    <div class="msd reached">
+      <div class="msd-top">
+        <span class="msd-badge">✓</span>
+        <span class="msd-label">All milestones reached</span>
+        <span class="msd-target">${wms[9].target}<small>${u()}</small></span>
+      </div>
+      <div class="msd-bar"><i style="width:100%"></i></div>
+      <div class="msd-sub">Goal weight hit — nice work</div>
+    </div>`}`;
+
   const chart=`
     <div class="card chart-card" style="margin-top:14px">
       <div class="section-title" style="margin:0 0 10px">Weight trend</div>
@@ -592,21 +644,19 @@ function renderDashboard(){
     </div>`;
 
   main().innerHTML=`
+    <button id="layout-edit-btn" class="btn sm" style="position:fixed;top:60px;right:14px;z-index:9000">✎ Edit layout</button>
     <div class="greet-hero">
       <div class="greet-char">
-        <img class="avatar" id="charImg" alt="" src="avatar.png" style="image-rendering:pixelated">
+        <img class="avatar" id="charImg" alt="" src="avatar.png?v=${AVATAR_REV}" style="image-rendering:pixelated">
       </div>
       <div class="greet-right">
         <div class="greet-top-stickers">
           <img src="lets-go-ro.png" class="sticker-letsgo" alt="Let's go, Ro!" style="image-rendering:pixelated">
           <img src="cats.png" class="sticker-cats" alt="" style="image-rendering:pixelated">
-          <div class="sticker-date-wrap">
-            <img src="date-textbox.png" class="sticker-datebox" alt="" style="image-rendering:pixelated">
-            <div class="datebox-text">${fmtDate(t,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</div>
-          </div>
         </div>
         <div class="greet-streak-wrap">
         <div class="card greet-streak-card" style="padding:18px;border:2.5px solid #222">
+        <div class="datebox-text">${fmtDate(t,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</div>
         <div class="streak-week-row">
           <div class="streak-flame-col">
             <div class="sflame-title">Your streak</div>
@@ -625,14 +675,132 @@ function renderDashboard(){
     </div>
 
     ${cards}
-    ${chart}
-    <div class="note" style="margin-top:14px">${nextPhaseNote()}</div>`;
+    ${msBlock}
+    ${chart}`;
 
   bindGo();
   document.querySelectorAll('[data-woday]').forEach(box=>{
     box.onclick=()=>{ woDay=box.dataset.woday; go('workouts'); };
   });
   processAvatar();
+  applyLayout();
+  const leb=$('#layout-edit-btn'); if(leb) leb.onclick=editLayout;
+}
+
+/* ---------- draggable dashboard layout editor ---------- */
+const LAYOUT_TARGETS=[
+  { key:'avatar',   sel:'#charImg',        name:'Avatar',    color:'#a1466b', type:'img' },
+  { key:'letsgo',   sel:'.sticker-letsgo', name:"Let's go",  color:'#7a4a9a', type:'img' },
+  { key:'cats',     sel:'.sticker-cats',   name:'Cats',      color:'#4a7a4a', type:'img' },
+  { key:'streakcard', sel:'.greet-streak-card', name:'Streak card', color:'#3a6a9a', type:'box', grip:'bl' },
+  { key:'datetext', sel:'.datebox-text',   name:'Date text', color:'#b5771f', type:'text' },
+];
+function applyLayout(){
+  LAYOUT_TARGETS.forEach(t=>{
+    const el=document.querySelector(t.sel); const s=state.layout[t.key]; if(!el||!s) return;
+    if(s.x!=null||s.y!=null||s.rot!=null){
+      const x=s.x||0, y=s.y||0, rot=s.rot||0;
+      const base=t.centered?`translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`:`translate(${x}px, ${y}px)`;
+      el.style.transform=`${base} rotate(${rot}deg)`;
+    }
+    if(t.type==='text'){ if(s.font) el.style.fontSize=s.font+'px'; }
+    // 'box' resizes use min-height so the contents keep their even padding instead of
+    // spilling past the border when the box is dragged shorter than its content.
+    else if(t.type==='box'){ if(s.w) el.style.width=s.w+'px'; if(s.h) el.style.minHeight=s.h+'px'; }
+    else { if(s.w) el.style.width=s.w+'px'; if(s.h) el.style.height=s.h+'px'; }
+  });
+}
+function editLayout(){
+  if(document.getElementById('layout-overlay')) return;
+  const find=sel=>document.querySelector(sel);
+  const overlay=document.createElement('div'); overlay.id='layout-overlay';
+  overlay.style.cssText='position:fixed;inset:0;z-index:100000;pointer-events:none';
+  document.body.appendChild(overlay);
+  const dtNow=find('.datebox-text'); if(dtNow) dtNow.style.zIndex='50';
+
+  // working copy seeded from saved layout
+  const st={};
+  LAYOUT_TARGETS.forEach(t=>{ if(find(t.sel)){ const s=state.layout[t.key]||{}; st[t.key]={x:s.x||0,y:s.y||0,rot:s.rot||0,rz:(s.w||s.h||s.font)?true:false,w:s.w||0,h:s.h||0,font:s.font||0}; } });
+
+  function apply(t){ const s=st[t.key], el=find(t.sel); if(!s||!el) return;
+    const base=t.centered?`translate(calc(-50% + ${s.x}px), calc(-50% + ${s.y}px))`:`translate(${s.x}px, ${s.y}px)`;
+    el.style.transform=`${base} rotate(${s.rot}deg)`;
+    if(s.rz){ if(t.type==='text') el.style.fontSize=s.font+'px';
+      else if(t.type==='box'){ el.style.width=s.w+'px'; el.style.minHeight=s.h+'px'; }
+      else { el.style.width=s.w+'px'; el.style.height=s.h+'px'; } }
+  }
+
+  const H={};
+  LAYOUT_TARGETS.forEach(t=>{ if(!st[t.key]) return; const g={};
+    const mk=(cls,extra)=>{ const d=document.createElement('div'); d.style.cssText='position:fixed;pointer-events:auto;box-sizing:border-box;'+extra; overlay.appendChild(d); return d; };
+    g.move=mk('','cursor:grab');
+    g.box=document.createElement('div'); g.box.style.cssText=`position:fixed;border:2px dashed ${t.color};box-sizing:border-box;pointer-events:none`; overlay.appendChild(g.box);
+    g.label=document.createElement('div'); g.label.textContent=t.name; g.label.style.cssText=`position:fixed;font:700 9px monospace;color:#fff;background:${t.color};padding:1px 5px;border-radius:4px;pointer-events:none;white-space:nowrap;z-index:1`; overlay.appendChild(g.label);
+    const hs=`position:fixed;width:18px;height:18px;background:${t.color};border:2px solid #fff;pointer-events:auto;box-shadow:0 1px 4px rgba(0,0,0,.5);box-sizing:border-box`;
+    g.hc=mk('',hs+';border-radius:3px;cursor:'+(t.grip==='bl'?'nesw-resize':'nwse-resize'));
+    g.hw=mk('',hs+';border-radius:3px;cursor:ew-resize');
+    g.hh=mk('',hs+';border-radius:3px;cursor:ns-resize');
+    g.rot=mk('',hs+';border-radius:50%;cursor:grab');
+    H[t.key]=g;
+  });
+
+  function sync(){ LAYOUT_TARGETS.forEach(t=>{ const g=H[t.key], el=find(t.sel); if(!g||!el) return; apply(t); const r=el.getBoundingClientRect();
+    g.move.style.left=r.left+'px'; g.move.style.top=r.top+'px'; g.move.style.width=r.width+'px'; g.move.style.height=r.height+'px';
+    g.box.style.left=r.left+'px'; g.box.style.top=r.top+'px'; g.box.style.width=r.width+'px'; g.box.style.height=r.height+'px';
+    g.label.style.left=r.left+'px'; g.label.style.top=(r.top-13)+'px';
+    const bl=t.grip==='bl';   // grip corner on the bottom-left instead of bottom-right
+    g.hc.style.left=(bl?r.left-9:r.right-9)+'px'; g.hc.style.top=(r.bottom-9)+'px';
+    g.hw.style.left=(bl?r.left-9:r.right-9)+'px'; g.hw.style.top=(r.top+r.height/2-9)+'px';
+    g.hh.style.left=(r.left+r.width/2-9)+'px'; g.hh.style.top=(r.bottom-9)+'px';
+    g.rot.style.left=(r.left+r.width/2-9)+'px'; g.rot.style.top=(r.top-28)+'px';
+  }); }
+  let raf; function loop(){ sync(); raf=requestAnimationFrame(loop); } loop();
+
+  function ensureSize(t){ const s=st[t.key], el=find(t.sel); if(!s.rz){ const r=el.getBoundingClientRect(); s.w=Math.round(r.width); s.h=Math.round(r.height); if(t.type==='text') s.font=parseFloat(getComputedStyle(el).fontSize); s.rz=true; } }
+  // Pointer events + capture: the preview pane delivers pointer events, not mouse events,
+  // so mousemove/mouseup listeners never fired here.
+  function drag(onMove){ return e=>{ e.preventDefault(); e.stopPropagation();
+    const sx=e.clientX, sy=e.clientY, el=e.currentTarget, pid=e.pointerId;
+    try{ el.setPointerCapture(pid); }catch(_){}
+    function mv(ev){ onMove(ev.clientX-sx, ev.clientY-sy); }
+    function up(){ el.removeEventListener('pointermove',mv); el.removeEventListener('pointerup',up); el.removeEventListener('pointercancel',up);
+      try{ el.releasePointerCapture(pid); }catch(_){} }
+    el.addEventListener('pointermove',mv); el.addEventListener('pointerup',up); el.addEventListener('pointercancel',up); };}
+
+  LAYOUT_TARGETS.forEach(t=>{ const s=st[t.key], g=H[t.key]; if(!s||!g) return;
+    g.move.addEventListener('pointerdown', e=>{ const ox=s.x,oy=s.y; drag((dx,dy)=>{s.x=ox+dx;s.y=oy+dy;})(e); });
+    const bl=t.grip==='bl';
+    // bottom-left grip: dragging left grows the box, and x shifts by the same amount so
+    // the right edge stays pinned where it is.
+    const setW=(ow,ox,dx)=>{ const nw=Math.max(10,Math.round(bl?ow-dx:ow+dx)); if(bl) s.x=ox+(ow-nw); s.w=nw; };
+    g.hc.addEventListener('pointerdown', e=>{ ensureSize(t); const ow=s.w,oh=s.h,of=s.font,ox=s.x; drag((dx,dy)=>{ if(t.type==='text'){s.font=Math.max(6,Math.round(of+(bl?-dx:dx)*0.3));} else {setW(ow,ox,dx);s.h=Math.max(10,Math.round(oh+dy));} })(e); });
+    g.hw.addEventListener('pointerdown', e=>{ ensureSize(t); const ow=s.w,of=s.font,ox=s.x; drag((dx)=>{ if(t.type==='text'){s.font=Math.max(6,Math.round(of+(bl?-dx:dx)*0.3));} else {setW(ow,ox,dx);} })(e); });
+    g.hh.addEventListener('pointerdown', e=>{ ensureSize(t); const oh=s.h,of=s.font; drag((dx,dy)=>{ if(t.type==='text'){s.font=Math.max(6,Math.round(of+dy*0.3));} else {s.h=Math.max(10,Math.round(oh+dy));} })(e); });
+    g.rot.addEventListener('pointerdown', e=>{ e.preventDefault(); e.stopPropagation(); const el=find(t.sel); const r=el.getBoundingClientRect(); const cx=r.left+r.width/2, cy=r.top+r.height/2; const sa=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI, or=s.rot;
+      const h=e.currentTarget, pid=e.pointerId; try{ h.setPointerCapture(pid); }catch(_){}
+      function mv(ev){ const a=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI; s.rot=Math.round(or+(a-sa)); }
+      function up(){ h.removeEventListener('pointermove',mv); h.removeEventListener('pointerup',up); h.removeEventListener('pointercancel',up); try{ h.releasePointerCapture(pid); }catch(_){} }
+      h.addEventListener('pointermove',mv); h.addEventListener('pointerup',up); h.addEventListener('pointercancel',up); });
+  });
+
+  const panel=document.createElement('div'); panel.id='layout-panel';
+  panel.style.cssText='position:fixed;bottom:14px;right:14px;background:#fff;border:2.5px solid #222;border-radius:12px;padding:12px 14px;z-index:100002;font:12px monospace;box-shadow:0 6px 24px rgba(0,0,0,.35);min-width:230px';
+  panel.innerHTML=`<div style="font-weight:900;margin-bottom:6px">✥ Edit layout</div>
+    <div style="font-size:10px;color:#666;margin-bottom:10px">Drag body = move · squares = resize · circle = rotate</div>
+    <button id="lp-reset" style="width:100%;padding:7px;margin-bottom:7px;background:#eee;color:#333;border:1px solid #ccc;border-radius:8px;cursor:pointer;font-family:monospace">↺ Reset all</button>
+    <button id="lp-save" style="width:100%;padding:9px;background:#5aa06f;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:monospace;font-weight:700">✓ Save</button>`;
+  document.body.appendChild(panel);
+
+  function close(){ cancelAnimationFrame(raf); overlay.remove(); panel.remove(); }
+  document.getElementById('lp-reset').onclick=()=>{ LAYOUT_TARGETS.forEach(t=>{ const el=find(t.sel); st[t.key]={x:0,y:0,rot:0,rz:false,w:0,h:0,font:0}; el.style.transform='';el.style.width='';el.style.height='';el.style.fontSize=''; }); };
+  document.getElementById('lp-save').onclick=()=>{
+    LAYOUT_TARGETS.forEach(t=>{ const s=st[t.key]; if(!s) return;
+      const rec={x:s.x,y:s.y,rot:s.rot};
+      if(s.rz){ if(t.type==='text') rec.font=s.font; else { rec.w=s.w; rec.h=s.h; } }
+      state.layout[t.key]=rec;
+    });
+    persist('layout'); close(); toast('Layout saved'); renderDashboard();
+  };
 }
 function nextPhaseNote(){
   const wi=currentWeekIndex(), block=state.settings.deficitWeeksPerBlock;

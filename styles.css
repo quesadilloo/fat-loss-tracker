@@ -103,6 +103,8 @@ body{
 .card{background:var(--card);border:2.5px solid #222;border-radius:var(--r);padding:18px;box-shadow:var(--shadow-sm)}
 .grid{display:grid;gap:14px}
 .cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+/* lift the metric cards above the avatar so it tucks behind them */
+.cards>.card{position:relative;z-index:1}
 .metric .k{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
 .metric .v{font-family:var(--serif);font-size:30px;font-weight:700;color:var(--ink);margin-top:6px;line-height:1}
 .metric .v small{font-size:13px;font-weight:700;color:var(--muted);margin-left:3px;font-family:var(--mono)}
@@ -115,17 +117,39 @@ body{
 
 /* ---------- DASHBOARD: greeting ---------- */
 .greet{display:flex;align-items:center;gap:16px;margin:6px 0 18px}
-.greet-hero{display:flex;align-items:flex-end;gap:8px;margin:6px 0 14px}
-.greet-char{flex-shrink:0;width:130px;margin-top:-60px;margin-left:-12px}
-.greet-right{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:6px;position:relative}
+.greet-hero{display:flex;align-items:flex-end;gap:8px;margin:6px 0 14px;overflow:visible}
+/* Avatar sits in the hero but paints *behind* the cards below it, so it can hang
+   down over the metric row and tuck underneath. */
+.greet-char{flex-shrink:0;width:86px;margin-top:0;margin-left:-12px;position:relative;z-index:0}
+.greet-char>img{display:block;width:100%;height:auto}
+/* inset from the avatar — streak card + top stickers sit further right, right edge stays put */
+.greet-right{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:6px;position:relative;margin-left:44px}
 .greet-top-stickers{display:flex;align-items:flex-end;gap:6px;margin-bottom:8px;flex-wrap:nowrap}
 .sticker-letsgo{height:60px;width:auto;flex-shrink:0;image-rendering:pixelated}
 .sticker-cats{height:56px;width:auto;flex-shrink:0;image-rendering:pixelated}
-.sticker-date-wrap{position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.sticker-datebox{height:60px;width:auto;display:block;image-rendering:pixelated}
-.datebox-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Determination',var(--mono);font-size:11px;color:#111;white-space:nowrap;text-align:center;pointer-events:none}
+/* date sits on the same line as the "Your streak" title, right-aligned, same colour */
+.datebox-text{position:absolute;top:18px;right:18px;z-index:3;height:13px;display:flex;align-items:center;
+  font-family:'Determination',var(--mono);font-size:13px;font-weight:900;letter-spacing:.04em;
+  color:var(--muted);white-space:nowrap}
 .greet-streak-wrap{position:relative;z-index:1}
-.greet-streak-card{flex:1;min-width:0}
+.greet-streak-card{flex:1;min-width:0;position:relative}
+
+/* ---------- dashboard milestones ---------- */
+.msd{background:var(--card);border:2px solid var(--line2);border-radius:14px;padding:14px 16px 15px;display:flex;flex-direction:column;gap:10px}
+.msd.reached{background:linear-gradient(165deg,#eaf3ec,#dfeee3);border-color:#3f7d54}
+.msd.current{border-color:#222;box-shadow:0 0 0 2px rgba(90,160,111,.18)}
+.msd-top{display:flex;align-items:center;gap:9px}
+/* matches the "n/10 reached" header exactly: same weight, tracking and colour */
+.msd-label{flex:1;min-width:0;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:var(--faint)}
+.msd-badge{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--line2);color:#fff;font-family:var(--mono);font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.msd.reached .msd-badge{background:#3f7d54}
+.msd.current .msd-badge{background:var(--amber)}
+.msd-target{flex-shrink:0;font-family:var(--serif);font-size:26px;font-weight:700;color:var(--ink);line-height:1}
+.msd-target small{font-size:11px;font-weight:700;color:var(--muted);font-family:var(--mono);margin-left:3px}
+.msd-bar{height:9px;border-radius:9px;background:var(--line);overflow:hidden}
+.msd-bar>i{display:block;height:100%;border-radius:6px;background:var(--teal-l);transition:width .4s}
+.msd.reached .msd-bar>i{background:#3f7d54}
+.msd-sub{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
 .avatar{width:96px;height:auto;flex:0 0 96px;image-rendering:pixelated;
   filter:drop-shadow(0 0 5px rgba(255,255,255,.45)) drop-shadow(0 0 10px rgba(255,228,196,.3)) drop-shadow(0 5px 9px rgba(35,18,48,.4))}
 .greet h1{font-family:var(--serif);font-size:27px;font-weight:700;color:#fff;line-height:1.05;text-shadow:0 2px 7px rgba(35,18,48,.5)}

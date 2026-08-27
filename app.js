@@ -61,6 +61,7 @@ const DB = {
    tracked data to one Supabase row keyed by a sync code, pulling on load and
    pushing after changes. The anon key is public in a static app, so the sync code
    is the actual secret — keep it long and private. */
+const APP_VERSION='v71';
 const SYNC_SLICES=['settings','weights','activity','measures','diary','workouts','bank'];
 const SYNC={
   cfg(){ return DB.load('sync', {url:'',key:'',code:'',auto:false,last:null}); },
@@ -81,7 +82,7 @@ const SYNC={
     const c=SYNC.cfg(); if(!SYNC.ready(c)) throw new Error('Sync is not set up');
     const r=await fetch(`${SYNC.endpoint(c)}?id=eq.${encodeURIComponent(c.code)}&select=data,updated_at`,
       {headers:SYNC.headers(c)});
-    if(!r.ok) throw new Error('Pull failed ('+r.status+')');
+    if(!r.ok){ SYNC._err='pull '+r.status; throw new Error('Pull failed ('+r.status+')'); }
     const rows=await r.json();
     if(!rows.length) return {empty:true};
     const {data,updated_at}=rows[0];
@@ -120,7 +121,7 @@ const SYNC={
       headers:{...SYNC.headers(c), Prefer:'resolution=merge-duplicates,return=minimal'},
       body:JSON.stringify([{id:c.code, data:SYNC.payload(), updated_at:new Date().toISOString()}])
     });
-    if(!r.ok) throw new Error('Push failed ('+r.status+')');
+    if(!r.ok){ SYNC._err='push '+r.status; throw new Error('Push failed ('+r.status+')'); }
     c.last=new Date().toISOString(); SYNC.saveCfg(c);
     return true;
   },
@@ -1456,6 +1457,7 @@ function renderSettings(){
         <input type="checkbox" id="s-sync-auto" ${sc.auto?'checked':''}> Sync automatically as I log
       </label>
       <div id="s-sync-status" class="note" style="margin-top:12px">${sc.last?'Last synced '+new Date(sc.last).toLocaleString():'Not synced yet'}</div>
+      <div id="s-sync-diag" class="note" style="margin-top:6px;font-size:12px;opacity:.75"></div>
     </div>
 
     <div class="card" style="margin-top:18px">
@@ -1555,6 +1557,12 @@ function renderSettings(){
 
   // --- sync handlers ---
   const syncStatus=m=>{ const el=$('#s-sync-status'); if(el) el.textContent=m; };
+  // visible build + connection readout, so a stale cached build is obvious
+  const syncDiag=()=>{ const el=$('#s-sync-diag'); if(!el) return; const c=SYNC.cfg();
+    el.textContent=`${APP_VERSION} · ${location.hostname} · auto ${c.auto?'on':'OFF'} · `
+      +`${SYNC.ready(c)?'connected':'not connected'} · ${state.weights.length} weigh-ins`
+      +(SYNC._err?' · last error: '+SYNC._err:''); };
+  syncDiag(); setInterval(syncDiag, 2000);
   const readSync=()=>{ const c=SYNC.cfg();
     c.url=$('#s-sync-url').value.trim(); c.key=$('#s-sync-key').value.trim();
     c.code=$('#s-sync-code').value.trim(); c.auto=$('#s-sync-auto').checked; return c; };

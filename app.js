@@ -114,11 +114,27 @@ const SYNC={
   },
 
   // debounced background push, so a burst of edits sends once
-  _t:null,
+  _t:null, _dirty:false,
   queue(){
     const c=SYNC.cfg(); if(!c.auto||!SYNC.ready(c)) return;
+    SYNC._dirty=true;
     clearTimeout(SYNC._t);
-    SYNC._t=setTimeout(()=>SYNC.push().catch(e=>{ console.warn('sync:',e.message); toast('Cloud sync failed \u2014 '+e.message); }), 2000);
+    SYNC._t=setTimeout(()=>{ SYNC._dirty=false;
+      SYNC.push().catch(e=>{ SYNC._dirty=true; console.warn('sync:',e.message); toast('Cloud sync failed \u2014 '+e.message); });
+    }, 2000);
+  },
+
+  // leaving the page inside the debounce window would drop the push, so flush it
+  // immediately with keepalive, which outlives the tab.
+  flush(){
+    const c=SYNC.cfg(); if(!SYNC._dirty||!c.auto||!SYNC.ready(c)) return;
+    clearTimeout(SYNC._t); SYNC._dirty=false;
+    fetch(SYNC.endpoint(c), {
+      method:'POST', keepalive:true,
+      headers:{...SYNC.headers(c), Prefer:'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([{id:c.code, data:SYNC.payload(), updated_at:new Date().toISOString()}])
+    }).catch(()=>{});
+    c.last=new Date().toISOString(); SYNC.saveCfg(c);
   },
 };
 
@@ -1944,3 +1960,8 @@ function bindGo(){ document.querySelectorAll('[data-go]').forEach(b=>b.onclick=(
 /* ---------- boot ---------- */
 go('dashboard');
 SYNC.autoPull().then(changed=>{ if(changed){ toast('Synced from cloud'); go(route); } });
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden') SYNC.flush();
+  else SYNC.autoPull().then(changed=>{ if(changed){ toast('Synced from cloud'); go(route); } });
+});
+window.addEventListener('pagehide',()=>SYNC.flush());

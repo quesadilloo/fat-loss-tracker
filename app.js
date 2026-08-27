@@ -60,14 +60,11 @@ const DB = {
 // layout travels with the app instead of living only in one browser's localStorage.
 // Tuned at a ~620px-wide viewport; applyLayout() ignores these below LAYOUT_MIN_W,
 // where the fixed pixel sizes would overflow, and lets the CSS flow handle it.
-const LAYOUT_MIN_W=700;
-// Only the decorative art is baked in. The streak card is deliberately left out so it
-// keeps filling its column — that is what keeps its right edge aligned with the metric
-// cards at any window width, which a fixed pixel width cannot do.
+const LAYOUT_MIN_W=0;   // these offsets are safe at any width, so always apply them
 const DEFAULT_LAYOUT={
-  avatar: {x:32, y:0,  rot:0, w:138, h:383},
-  letsgo: {x:4,  y:2,  rot:0, w:124, h:52},
-  cats:   {x:11, y:25, rot:0, w:104, h:70},
+  avatar: {x:23,  y:-10, rot:1, w:99,  h:257},
+  letsgo: {x:-31, y:-5,  rot:0, w:124, h:52},
+  cats:   {x:14,  y:68,  rot:0, w:111, h:72},
 };
 
 let state = {
@@ -671,27 +668,22 @@ function renderDashboard(){
           <img src="lets-go-ro.png" class="sticker-letsgo" alt="Let's go, Ro!" style="image-rendering:pixelated">
           <img src="cats.png" class="sticker-cats" alt="" style="image-rendering:pixelated">
         </div>
-        <div class="greet-streak-wrap">
-        <div class="card greet-streak-card" style="padding:18px;border:2.5px solid #222">
-        <div class="datebox-text">${fmtDate(t,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</div>
-        <div class="streak-week-row">
-          <div class="streak-flame-col">
-            <div class="sflame-title">Your streak</div>
-            <div class="sflamewrap">
-              <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="sflame-img" alt="🔥" style="height:90px;width:auto;image-rendering:pixelated">
-            </div>
-            <div class="sflame-lbl">Week${streak===1?'':'s'}</div>
-          </div>
-          <div class="streak-days-col">
-            ${strip}
-          </div>
-        </div>
-        </div>
-      </div>
       </div>
     </div>
 
     ${cards}
+
+    <div class="card week-card">
+      <div class="week-card-head">
+        <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="wk-flame" alt="🔥" style="image-rendering:pixelated">
+        <span class="wk-streak">Week streak</span>
+        <span class="wk-sep">·</span>
+        <div class="wk-label">Activities this week</div>
+        <span class="wk-sep">·</span>
+        <div class="datebox-text">${fmtDate(t,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</div>
+      </div>
+      ${strip}
+    </div>
     ${msBlock}
     ${chart}`;
 
@@ -709,7 +701,6 @@ const LAYOUT_TARGETS=[
   { key:'avatar',   sel:'#charImg',        name:'Avatar',    color:'#a1466b', type:'img' },
   { key:'letsgo',   sel:'.sticker-letsgo', name:"Let's go",  color:'#7a4a9a', type:'img' },
   { key:'cats',     sel:'.sticker-cats',   name:'Cats',      color:'#4a7a4a', type:'img' },
-  { key:'streakcard', sel:'.greet-streak-card', name:'Streak card', color:'#3a6a9a', type:'box', grip:'bl' },
   { key:'datetext', sel:'.datebox-text',   name:'Date text', color:'#b5771f', type:'text' },
 ];
 function applyLayout(){

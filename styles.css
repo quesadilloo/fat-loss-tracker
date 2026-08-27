@@ -117,7 +117,7 @@ body{
 
 /* ---------- DASHBOARD: greeting ---------- */
 .greet{display:flex;align-items:center;gap:16px;margin:6px 0 18px}
-.greet-hero{position:relative;display:flex;align-items:flex-end;gap:8px;margin:6px 0 14px;overflow:visible}
+.greet-hero{position:relative;display:flex;align-items:flex-start;gap:8px;margin:6px 0 14px;overflow:visible;min-height:225px}
 /* Avatar sits in the hero but paints *behind* the cards below it, so it can hang
    down over the metric row and tuck underneath. */
 /* Absolute so the avatar's height never inflates the hero row — otherwise a tall
@@ -128,8 +128,8 @@ body{
 /* inset from the avatar — streak card + top stickers sit further right, right edge stays put */
 /* room for the avatar, which is absolutely positioned: 96px matches the CSS-default
    86px art, 150px the wider baked-in layout that kicks in at >=700px */
-.greet-right{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:6px;position:relative;margin-left:96px}
-@media(min-width:700px){ .greet-right{margin-left:150px} }
+.greet-right{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-start;padding-top:4px;position:relative;margin-left:130px}
+
 .greet-top-stickers{display:flex;align-items:flex-end;gap:6px;margin-bottom:8px;flex-wrap:nowrap}
 .sticker-letsgo{height:60px;width:auto;flex-shrink:0;image-rendering:pixelated}
 .sticker-cats{height:56px;width:auto;flex-shrink:0;image-rendering:pixelated}
@@ -140,7 +140,6 @@ body{
 /* layout-editor sizes are explicit px — never let one overflow its column */
 .sticker-letsgo,.sticker-cats,.greet-streak-card{max-width:100%}
 .greet-streak-wrap{position:relative;z-index:1}
-.greet-streak-card{flex:1;min-width:0;position:relative}
 
 /* ---------- dashboard milestones ---------- */
 .msd{background:var(--card);border:2px solid var(--line2);border-radius:14px;padding:14px 16px 15px;display:flex;flex-direction:column;gap:10px}
@@ -466,14 +465,22 @@ input[type=range]{accent-color:var(--teal)}
 
 /* Narrow screens: the absolutely-positioned date collides with the "Your streak"
    title, so let it sit on its own line above the streak row instead. */
-@media(max-width:620px){
-  .datebox-text{position:static;height:auto;display:block;margin:0 0 10px;text-align:left}
-  /* stack the flame above the day strip so the 7 pills get the card's full width —
-     side by side they are squeezed below their min-content size and spill out */
-  .streak-week-row{flex-direction:column;align-items:stretch;gap:10px}
-  .streak-flame-col{flex-direction:row;align-items:center;justify-content:flex-start;
-    gap:12px;min-width:0;width:100%}
-  .sflame-title{margin-bottom:0}
-  .streak-days-col{padding-top:0;width:100%}
-  .wdc-cell{min-width:0}
+@media(max-width:520px){
+  .greet-hero{min-height:200px}
+      .week-card-head{flex-wrap:wrap;gap:6px}
+  .week-card .datebox-text{text-align:left}
 }
+
+
+/* ---------- week card (date + day strip, under the metric cards) ---------- */
+.week-card{margin-top:14px}
+.week-card-head{display:flex;align-items:center;justify-content:flex-start;gap:10px;margin-bottom:12px}
+.week-card .datebox-text{position:static;height:auto;display:block;margin:0;text-align:left}
+.wk-flame{height:30px;width:auto;display:block;flex-shrink:0}
+.wk-streak,.wk-label,.wk-sep{font-family:'Determination',var(--mono);font-size:13px;font-weight:900;
+  letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+.wk-sep{opacity:.55}
+.wk-streak{color:var(--ink)}
+.week-card .wdc-grid{width:100%}
+.week-card .wdc-cell{min-width:0;aspect-ratio:1;height:auto;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:4px}

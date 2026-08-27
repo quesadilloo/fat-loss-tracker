@@ -85,13 +85,36 @@ const SYNC={
     const rows=await r.json();
     if(!rows.length) return {empty:true};
     const {data,updated_at}=rows[0];
-    SYNC_SLICES.forEach(k=>{ if(data[k]!=null){ state[k]=data[k]; persist(k); } });
+    SYNC_SLICES.forEach(k=>{ state[k]=SYNC.mergeSlice(k, data[k], state[k]); DB.save(k,state[k]); });
     c.last=new Date().toISOString(); SYNC.saveCfg(c);
     return {updated_at};
   },
 
+  // union of cloud and local, local entry wins on the same key — so a device
+  // that has logged less can never erase entries another device has.
+  mergeSlice(k, cloud, local){
+    if(cloud==null) return local;
+    if(local==null) return cloud;
+    if(Array.isArray(local)&&Array.isArray(cloud)){
+      const m=new Map();
+      cloud.concat(local).forEach(e=>{ if(e&&e.date) m.set(e.date,e); });
+      return m.size ? [...m.values()].sort((a,b)=>a.date<b.date?-1:1) : local;
+    }
+    if(k==='workouts') return {...cloud, ...local, log:{...(cloud.log||{}), ...(local.log||{})}};
+    if(k==='activity'||k==='bank') return {...cloud, ...local};
+    return local; // settings: this device's copy wins
+  },
+
   async push(){
     const c=SYNC.cfg(); if(!SYNC.ready(c)) throw new Error('Sync is not set up');
+    // read the cloud copy and merge before writing, so push never destroys
+    // entries logged on another device
+    let cloud=null;
+    try{
+      const g=await fetch(`${SYNC.endpoint(c)}?id=eq.${encodeURIComponent(c.code)}&select=data`,{headers:SYNC.headers(c)});
+      if(g.ok){ const rows=await g.json(); if(rows.length) cloud=rows[0].data; }
+    }catch(e){}
+    if(cloud) SYNC_SLICES.forEach(k=>{ state[k]=SYNC.mergeSlice(k, cloud[k], state[k]); DB.save(k,state[k]); });
     const r=await fetch(SYNC.endpoint(c), {
       method:'POST',
       headers:{...SYNC.headers(c), Prefer:'resolution=merge-duplicates,return=minimal'},
@@ -114,7 +137,7 @@ const SYNC={
       const rows=await r.json(); if(!rows.length) return false;
       const {data,updated_at}=rows[0];
       if(c.last && new Date(updated_at) <= new Date(c.last)) return false;
-      SYNC_SLICES.forEach(k=>{ if(data[k]!=null){ state[k]=data[k]; DB.save(k,state[k]); } });
+      SYNC_SLICES.forEach(k=>{ state[k]=SYNC.mergeSlice(k, data[k], state[k]); DB.save(k,state[k]); });
       c.last=new Date().toISOString(); SYNC.saveCfg(c);
       return true;
     }catch(e){ return false; }
@@ -134,7 +157,7 @@ const SYNC={
   // leaving the page inside the debounce window would drop the push, so flush it
   // immediately with keepalive, which outlives the tab.
   flush(){
-    const c=SYNC.cfg(); if(!SYNC._dirty||!c.auto||!SYNC.ready(c)) return;
+    const c=SYNC.cfg(); if(!SYNC._dirty||!c.auto||!SYNC.ready(c)||!c.last) return;
     clearTimeout(SYNC._t); SYNC._dirty=false;
     fetch(SYNC.endpoint(c), {
       method:'POST', keepalive:true,

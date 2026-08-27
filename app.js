@@ -67,7 +67,14 @@ const SYNC={
   saveCfg(c){ DB.save('sync', c); },
   ready(c=SYNC.cfg()){ return !!(c.url&&c.key&&c.code); },
   endpoint(c){ return c.url.replace(/\/+$/,'')+'/rest/v1/flt_sync'; },
-  headers(c){ return {apikey:c.key, Authorization:'Bearer '+c.key, 'Content-Type':'application/json'}; },
+  // legacy anon keys are JWTs and belong in Authorization too; the newer
+  // sb_publishable_ keys are NOT JWTs and get a 401 if sent as a Bearer token,
+  // so those go in the apikey header alone.
+  headers(c){
+    const h={apikey:c.key, 'Content-Type':'application/json'};
+    if(c.key.startsWith('ey')) h.Authorization='Bearer '+c.key;
+    return h;
+  },
   payload(){ const o={}; SYNC_SLICES.forEach(k=>o[k]=state[k]); return o; },
 
   async pull(){

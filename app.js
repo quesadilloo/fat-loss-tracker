@@ -60,12 +60,22 @@ const DB = {
 // layout travels with the app instead of living only in one browser's localStorage.
 // Tuned at a ~620px-wide viewport; applyLayout() ignores these below LAYOUT_MIN_W,
 // where the fixed pixel sizes would overflow, and lets the CSS flow handle it.
-const LAYOUT_MIN_W=0;   // these offsets are safe at any width, so always apply them
-const DEFAULT_LAYOUT={
-  avatar: {x:23,  y:-10, rot:1, w:99,  h:257},
-  letsgo: {x:-31, y:-5,  rot:0, w:124, h:52},
-  cats:   {x:14,  y:68,  rot:0, w:111, h:72},
+// Two baked arrangements: the cats sit beside the avatar on a narrow screen but out
+// to the right on a wide one, which no single offset can express — the sticker row's
+// width changes underneath them. Picked by width, re-applied on resize.
+const LAYOUT_BP=560;
+const DEFAULT_LAYOUT_WIDE={
+  avatar: {x:26,  y:-10, rot:1, w:99,  h:257},
+  letsgo: {x:-31, y:-9,  rot:0, w:124, h:52},
+  cats:   {x:14,  y:64,  rot:0, w:111, h:72},
 };
+const DEFAULT_LAYOUT_NARROW={
+  avatar: {x:16,   y:-12, rot:1, w:99,  h:257},
+  letsgo: {x:-44,  y:-16, rot:0, w:124, h:52},
+  cats:   {x:-161, y:59,  rot:0, w:111, h:72},
+};
+const defaultLayout=()=>window.innerWidth<LAYOUT_BP?DEFAULT_LAYOUT_NARROW:DEFAULT_LAYOUT_WIDE;
+const DEFAULT_LAYOUT=defaultLayout();
 
 let state = {
   settings: mergeSettings(DB.load('settings', null)),
@@ -707,9 +717,9 @@ function applyLayout(){
   // The baked defaults are pixel values tuned for a wide viewport; on a phone they
   // would overflow, so fall back to plain CSS flow there. A layout the user dragged
   // on *this* device always wins, whatever the width.
-  if(LAYOUT_IS_DEFAULT && window.innerWidth<LAYOUT_MIN_W) return;
+  const L=LAYOUT_IS_DEFAULT?defaultLayout():state.layout;
   LAYOUT_TARGETS.forEach(t=>{
-    const el=document.querySelector(t.sel); const s=state.layout[t.key]; if(!el||!s) return;
+    const el=document.querySelector(t.sel); const s=L[t.key]; if(!el||!s) return;
     if(s.x!=null||s.y!=null||s.rot!=null){
       const x=s.x||0, y=s.y||0, rot=s.rot||0;
       const base=t.centered?`translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`:`translate(${x}px, ${y}px)`;
@@ -722,6 +732,13 @@ function applyLayout(){
     else { if(s.w) el.style.width=s.w+'px'; if(s.h) el.style.height=s.h+'px'; }
   });
 }
+// crossing the breakpoint swaps which baked arrangement applies
+let _lastBP=window.innerWidth<LAYOUT_BP;
+window.addEventListener('resize',()=>{
+  const bp=window.innerWidth<LAYOUT_BP;
+  if(bp!==_lastBP){ _lastBP=bp; if(LAYOUT_IS_DEFAULT) applyLayout(); }
+});
+
 function editLayout(){
   if(document.getElementById('layout-overlay')) return;
   const find=sel=>document.querySelector(sel);

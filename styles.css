@@ -117,7 +117,7 @@ body{
 
 /* ---------- DASHBOARD: greeting ---------- */
 .greet{display:flex;align-items:center;gap:16px;margin:6px 0 18px}
-.greet-hero{position:relative;display:flex;align-items:flex-start;gap:8px;margin:6px 0 14px;overflow:visible;min-height:225px}
+.greet-hero{position:relative;display:flex;align-items:flex-start;gap:8px;margin:6px 0 14px;overflow:visible;min-height:130px}
 /* Avatar sits in the hero but paints *behind* the cards below it, so it can hang
    down over the metric row and tuck underneath. */
 /* Absolute so the avatar's height never inflates the hero row — otherwise a tall
@@ -466,7 +466,7 @@ input[type=range]{accent-color:var(--teal)}
 /* Narrow screens: the absolutely-positioned date collides with the "Your streak"
    title, so let it sit on its own line above the streak row instead. */
 @media(max-width:520px){
-  .greet-hero{min-height:200px}
+  .greet-hero{min-height:250px}
       .week-card-head{flex-wrap:wrap;gap:6px}
   .week-card .datebox-text{text-align:left}
 }

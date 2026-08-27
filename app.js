@@ -56,6 +56,54 @@ const DB = {
   save(key, val){ localStorage.setItem('flt_'+key, JSON.stringify(val)); },
 };
 
+/* ---------- cross-device sync (Supabase REST) ----------
+   localStorage is per browser, so a second device starts empty. This mirrors the
+   tracked data to one Supabase row keyed by a sync code, pulling on load and
+   pushing after changes. The anon key is public in a static app, so the sync code
+   is the actual secret — keep it long and private. */
+const SYNC_SLICES=['settings','weights','activity','measures','diary','workouts','bank'];
+const SYNC={
+  cfg(){ return DB.load('sync', {url:'',key:'',code:'',auto:false,last:null}); },
+  saveCfg(c){ DB.save('sync', c); },
+  ready(c=SYNC.cfg()){ return !!(c.url&&c.key&&c.code); },
+  endpoint(c){ return c.url.replace(/\/+$/,'')+'/rest/v1/flt_sync'; },
+  headers(c){ return {apikey:c.key, Authorization:'Bearer '+c.key, 'Content-Type':'application/json'}; },
+  payload(){ const o={}; SYNC_SLICES.forEach(k=>o[k]=state[k]); return o; },
+
+  async pull(){
+    const c=SYNC.cfg(); if(!SYNC.ready(c)) throw new Error('Sync is not set up');
+    const r=await fetch(`${SYNC.endpoint(c)}?id=eq.${encodeURIComponent(c.code)}&select=data,updated_at`,
+      {headers:SYNC.headers(c)});
+    if(!r.ok) throw new Error('Pull failed ('+r.status+')');
+    const rows=await r.json();
+    if(!rows.length) return {empty:true};
+    const {data,updated_at}=rows[0];
+    SYNC_SLICES.forEach(k=>{ if(data[k]!=null){ state[k]=data[k]; persist(k); } });
+    c.last=new Date().toISOString(); SYNC.saveCfg(c);
+    return {updated_at};
+  },
+
+  async push(){
+    const c=SYNC.cfg(); if(!SYNC.ready(c)) throw new Error('Sync is not set up');
+    const r=await fetch(SYNC.endpoint(c), {
+      method:'POST',
+      headers:{...SYNC.headers(c), Prefer:'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([{id:c.code, data:SYNC.payload(), updated_at:new Date().toISOString()}])
+    });
+    if(!r.ok) throw new Error('Push failed ('+r.status+')');
+    c.last=new Date().toISOString(); SYNC.saveCfg(c);
+    return true;
+  },
+
+  // debounced background push, so a burst of edits sends once
+  _t:null,
+  queue(){
+    const c=SYNC.cfg(); if(!c.auto||!SYNC.ready(c)) return;
+    clearTimeout(SYNC._t);
+    SYNC._t=setTimeout(()=>SYNC.push().catch(e=>console.warn('sync:',e.message)), 2000);
+  },
+};
+
 // Baked-in dashboard arrangement — the defaults every device starts from, so the
 // layout travels with the app instead of living only in one browser's localStorage.
 // Tuned at a ~620px-wide viewport; applyLayout() ignores these below LAYOUT_MIN_W,
@@ -167,7 +215,11 @@ function mergeSettings(saved){
   DB.save('settings', s);
   return s;
 }
-function persist(k){ DB.save(k, state[k]); }
+function persist(k){
+  DB.save(k, state[k]);
+  // mirror to the cloud when auto-sync is on; SYNC.queue debounces the burst
+  if(typeof SYNC!=='undefined' && SYNC_SLICES.includes(k)) SYNC.queue();
+}
 
 /* ============================================================
    DATE HELPERS  (store everything as YYYY-MM-DD)
@@ -1282,7 +1334,7 @@ function renderCalorieBank(){
    VIEW: SETTINGS
    ============================================================ */
 function renderSettings(){
-  const s=state.settings;
+  const s=state.settings, sc=SYNC.cfg();
   const F=(id,label,val,attrs='',hint='')=>`<div class="field"><label>${label}</label><input id="${id}" value="${val??''}" ${attrs}>${hint?`<span class="hint">${hint}</span>`:''}</div>`;
 
   main().innerHTML=`
@@ -1314,6 +1366,26 @@ function renderSettings(){
         ${F('s-startdate','Start date',s.startDate,'type="date"')}
       </div>
       <div class="form-actions"><button class="btn primary" id="s-save">Save settings</button></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="section-title" style="margin:0 0 12px">Sync across devices</div>
+      <div class="note" style="margin:0 0 14px">Your data lives in this browser only. Point all your devices at one Supabase project and the same sync code to share it. <b>The anon key is public — your sync code is the password, so keep it private.</b></div>
+      <div class="form">
+        ${F('s-sync-url','Supabase project URL',esc(sc.url||''),'type="text" placeholder="https://xxxx.supabase.co"')}
+        ${F('s-sync-key','Anon public key',esc(sc.key||''),'type="password" placeholder="eyJ..."')}
+        ${F('s-sync-code','Sync code (same on every device)',esc(sc.code||''),'type="text"','use the generate button if you have none')}
+      </div>
+      <div class="form-actions" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost" id="s-sync-gen">Generate code</button>
+        <button class="btn" id="s-sync-save">Save connection</button>
+        <button class="btn" id="s-sync-pull">⬇ Pull from cloud</button>
+        <button class="btn primary" id="s-sync-push">⬆ Push to cloud</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--muted)">
+        <input type="checkbox" id="s-sync-auto" ${sc.auto?'checked':''}> Sync automatically as I log
+      </label>
+      <div id="s-sync-status" class="note" style="margin-top:12px">${sc.last?'Last synced '+new Date(sc.last).toLocaleString():'Not synced yet'}</div>
     </div>
 
     <div class="card" style="margin-top:18px">
@@ -1411,13 +1483,43 @@ function renderSettings(){
   $('#s-intake').onchange=()=>{ state.settings.avgIntake=parseFloat($('#s-intake').value)||null; persist('settings'); };
   mmRender();
 
+  // --- sync handlers ---
+  const syncStatus=m=>{ const el=$('#s-sync-status'); if(el) el.textContent=m; };
+  const readSync=()=>{ const c=SYNC.cfg();
+    c.url=$('#s-sync-url').value.trim(); c.key=$('#s-sync-key').value.trim();
+    c.code=$('#s-sync-code').value.trim(); c.auto=$('#s-sync-auto').checked; return c; };
+  $('#s-sync-gen').onclick=()=>{
+    const a=new Uint8Array(18); crypto.getRandomValues(a);
+    $('#s-sync-code').value=[...a].map(b=>b.toString(36).padStart(2,'0')).join('').slice(0,28);
+  };
+  $('#s-sync-save').onclick=()=>{ SYNC.saveCfg(readSync()); toast('Connection saved'); syncStatus('Saved. Push to upload this device\u2019s data.'); };
+  $('#s-sync-auto').onchange=()=>{ SYNC.saveCfg(readSync()); };
+  $('#s-sync-push').onclick=async()=>{
+    SYNC.saveCfg(readSync());
+    syncStatus('Pushing\u2026');
+    try{ await SYNC.push(); toast('Pushed to cloud'); syncStatus('Pushed '+new Date().toLocaleTimeString()); }
+    catch(e){ toast('Push failed'); syncStatus(e.message); }
+  };
+  $('#s-sync-pull').onclick=async()=>{
+    SYNC.saveCfg(readSync());
+    if(!confirm('Replace this device\u2019s data with the cloud copy?')) return;
+    syncStatus('Pulling\u2026');
+    try{ const r=await SYNC.pull();
+      if(r.empty){ syncStatus('Nothing in the cloud yet \u2014 push from your main device first.'); return; }
+      toast('Pulled from cloud'); renderSettings();
+    }catch(e){ toast('Pull failed'); syncStatus(e.message); }
+  };
+
   $('#s-export').onclick=()=>download('fat-loss-tracker-backup.json', JSON.stringify(state,null,2));
   $('#s-import').onchange=e=>{
     const f=e.target.files[0]; if(!f)return;
     const rd=new FileReader();
     rd.onload=()=>{ try{
       const o=JSON.parse(rd.result);
-      ['settings','weights','activity','measures','diary'].forEach(k=>{ if(o[k]!=null){ state[k]=o[k]; persist(k); } });
+      // every persisted slice — omitting workouts/bank/layout silently dropped the
+      // workout plan, the calorie bank and the saved layout on import
+      ['settings','weights','activity','measures','diary','workouts','bank','layout']
+        .forEach(k=>{ if(o[k]!=null){ state[k]=o[k]; persist(k); } });
       toast('Data imported'); go('dashboard');
     }catch(err){ toast('Invalid file'); } };
     rd.readAsText(f);

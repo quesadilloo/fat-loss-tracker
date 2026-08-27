@@ -56,6 +56,20 @@ const DB = {
   save(key, val){ localStorage.setItem('flt_'+key, JSON.stringify(val)); },
 };
 
+// Baked-in dashboard arrangement — the defaults every device starts from, so the
+// layout travels with the app instead of living only in one browser's localStorage.
+// Tuned at a ~620px-wide viewport; applyLayout() ignores these below LAYOUT_MIN_W,
+// where the fixed pixel sizes would overflow, and lets the CSS flow handle it.
+const LAYOUT_MIN_W=700;
+// Only the decorative art is baked in. The streak card is deliberately left out so it
+// keeps filling its column — that is what keeps its right edge aligned with the metric
+// cards at any window width, which a fixed pixel width cannot do.
+const DEFAULT_LAYOUT={
+  avatar: {x:32, y:0,  rot:0, w:138, h:383},
+  letsgo: {x:4,  y:2,  rot:0, w:124, h:52},
+  cats:   {x:11, y:25, rot:0, w:104, h:70},
+};
+
 let state = {
   settings: mergeSettings(DB.load('settings', null)),
   weights:  DB.load('weights', []),       // [{date,weight,time,notes}]
@@ -64,8 +78,11 @@ let state = {
   diary:    DB.load('diary', []),         // [{date,content,mood,tags[]}]
   workouts: DB.load('workouts', defaultWorkouts()), // {plan:{Mon..Sun}, log:{ISO:true}}
   bank:     DB.load('bank', {}),          // {sundayISO:{steps:{0..5}, eaten:{0..5}}}  — calorie banking toward Saturday
-  layout:   DB.load('layout', {}),        // {key:{x,y,rot,w,h,font}} — draggable dashboard sticker positions
+  layout:   DB.load('layout', null) || DEFAULT_LAYOUT,   // {key:{x,y,rot,w,h,font}}
 };
+// True when nothing has been saved on this device, so the dashboard is showing the
+// baked-in arrangement rather than one the user dragged here.
+const LAYOUT_IS_DEFAULT = DB.load('layout', null)===null;
 
 // Bump when avatar.png is swapped. The saved layout stores an explicit w/h from the
 // old art, which would squash the new image — keep the on-screen height and rederive
@@ -696,6 +713,10 @@ const LAYOUT_TARGETS=[
   { key:'datetext', sel:'.datebox-text',   name:'Date text', color:'#b5771f', type:'text' },
 ];
 function applyLayout(){
+  // The baked defaults are pixel values tuned for a wide viewport; on a phone they
+  // would overflow, so fall back to plain CSS flow there. A layout the user dragged
+  // on *this* device always wins, whatever the width.
+  if(LAYOUT_IS_DEFAULT && window.innerWidth<LAYOUT_MIN_W) return;
   LAYOUT_TARGETS.forEach(t=>{
     const el=document.querySelector(t.sel); const s=state.layout[t.key]; if(!el||!s) return;
     if(s.x!=null||s.y!=null||s.rot!=null){

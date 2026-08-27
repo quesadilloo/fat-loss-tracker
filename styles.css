@@ -107,7 +107,8 @@ body{
 .cards>.card{position:relative;z-index:1}
 .metric .k{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
 .metric .v{font-family:var(--serif);font-size:30px;font-weight:700;color:var(--ink);margin-top:6px;line-height:1}
-.metric .v small{font-size:13px;font-weight:700;color:var(--muted);margin-left:3px;font-family:var(--mono)}
+.metric .v small{font-size:13px;font-weight:700;color:var(--muted);margin-left:3px;font-family:var(--mono);
+  position:relative;top:5px}
 .metric .d{font-size:12px;color:var(--faint);margin-top:7px}
 .metric .accent{color:var(--teal-d)}
 .metric.hl{background:linear-gradient(165deg,#eaf3ec,#dfeee3);border-color:#222}
@@ -152,7 +153,8 @@ body{
 .msd.reached .msd-badge{background:#3f7d54}
 .msd.current .msd-badge{background:var(--amber)}
 .msd-target{flex-shrink:0;font-family:var(--serif);font-size:26px;font-weight:700;color:var(--ink);line-height:1}
-.msd-target small{font-size:11px;font-weight:700;color:var(--muted);font-family:var(--mono);margin-left:3px}
+.msd-target small{font-size:11px;font-weight:700;color:var(--muted);font-family:var(--mono);margin-left:3px;
+  position:relative;top:4px}
 .msd-bar{height:9px;border-radius:9px;background:var(--line);overflow:hidden}
 .msd-bar>i{display:block;height:100%;border-radius:6px;background:var(--teal-l);transition:width .4s}
 .msd.reached .msd-bar>i{background:#3f7d54}
@@ -463,24 +465,48 @@ input[type=range]{accent-color:var(--teal)}
 @keyframes cg-fall{0%{transform:translateY(-20px) rotate(var(--rot));opacity:1}
   100%{transform:translateY(105vh) rotate(calc(var(--rot) + 540deg));opacity:.9}}
 
-/* Narrow screens: the absolutely-positioned date collides with the "Your streak"
-   title, so let it sit on its own line above the streak row instead. */
 @media(max-width:520px){
   .greet-hero{min-height:250px}
-      .week-card-head{flex-wrap:wrap;gap:6px}
   .week-card .datebox-text{text-align:left}
 }
 
 
 /* ---------- week card (date + day strip, under the metric cards) ---------- */
-.week-card{margin-top:14px}
-.week-card-head{display:flex;align-items:center;justify-content:flex-start;gap:10px;margin-bottom:12px}
+.week-card{position:relative;margin-top:14px;padding:14px 18px 16px}
+.week-card-head{position:relative;display:flex;align-items:baseline;justify-content:center;gap:9px;
+  margin-bottom:6px;flex-wrap:nowrap;white-space:nowrap;
+  transform:translate(var(--wk-x,0),var(--wk-y,0));cursor:grab;touch-action:none;user-select:none}
+.wk-dragging .week-card-head{cursor:grabbing}
 .week-card .datebox-text{position:static;height:auto;display:block;margin:0;text-align:left}
-.wk-flame{height:30px;width:auto;display:block;flex-shrink:0}
-.wk-streak,.wk-label,.wk-sep{font-family:'Determination',var(--mono);font-size:13px;font-weight:900;
-  letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+.wk-flame{height:26px;width:auto;display:block;flex-shrink:0;
+  /* the "1" sits above the sprite's bottom edge, so drop the image until the number's
+     bottom meets the text baseline rather than the artwork's */
+  position:relative;top:5px}
+/* same treatment as the metric card labels (.metric .k) */
+.wk-streak,.wk-label,.wk-sep,.week-card .datebox-text{font-family:var(--mono);font-size:var(--wk-size,12px);font-weight:700;
+  text-transform:uppercase;letter-spacing:.1em;color:var(--muted);white-space:nowrap}
 .wk-sep{opacity:.55}
+/* text-size stepper, pinned to the right of the header row */
+
+/* centre guide — only visible while dragging the header text */
+.wk-guide{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;
+  background:repeating-linear-gradient(to bottom,var(--line2) 0 5px,transparent 5px 10px);
+  opacity:0;transition:opacity .12s;pointer-events:none;z-index:1}
+.wk-dragging .wk-guide{opacity:1}
+.wk-guide.on{background:var(--teal);opacity:1}
+/* horizontal twin — marks the row's natural line so y=0 is findable */
+.wk-guide-h{position:absolute;left:0;right:0;height:2px;margin-top:-1px;
+  background:repeating-linear-gradient(to right,var(--line2) 0 5px,transparent 5px 10px);
+  opacity:0;transition:opacity .12s;pointer-events:none;z-index:1}
+.wk-guide-h.on{background:var(--teal);opacity:1}
+.wk-centred .week-card-head{color:var(--teal)}
 .wk-streak{color:var(--ink)}
 .week-card .wdc-grid{width:100%}
 .week-card .wdc-cell{min-width:0;aspect-ratio:1;height:auto;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:4px}
+
+/* Narrow screens: the header is nearly as wide as the card, so let it run to two
+   lines rather than pushing the date off the edge. */
+@media(max-width:640px){
+  .week-card-head{flex-wrap:wrap;white-space:normal;gap:4px 8px}
+}

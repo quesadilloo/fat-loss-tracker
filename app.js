@@ -193,6 +193,36 @@ function mifflinMaintenance(weightKg, s){
   const bmr = 10*weightKg + 6.25*s.height - 5*s.age + sexConst;
   return bmr * s.activityMultiplier;
 }
+/* ---------- measured maintenance ----------
+   The activity multiplier is a guess. If you know your average intake and your real
+   rate of loss, maintenance follows directly from energy balance and needs no guess:
+       deficit/day = kg per week * KCAL_PER_KG / 7
+       maintenance = intake + deficit/day
+   Returns null when there is not enough logged weight history to measure a rate. */
+function observedRatePerWeek(){
+  const ws=weightSeries();
+  if(ws.length<3) return null;
+  const days=daysBetween(ws[0].date, ws[ws.length-1].date);
+  if(days<14) return null;                 // too short for the average to mean anything
+  // Least-squares slope over the 7-day averages. Regressing raw weigh-ins, or just
+  // comparing first to last, would let one bloated morning swing the answer.
+  const d0=new Date(ws[0].date+'T12:00:00');
+  const pts=ws.map(w=>({x:(new Date(w.date+'T12:00:00')-d0)/86400000, y:w.avg}));
+  const n=pts.length;
+  const sx=pts.reduce((t,p)=>t+p.x,0), sy=pts.reduce((t,p)=>t+p.y,0);
+  const sxy=pts.reduce((t,p)=>t+p.x*p.y,0), sxx=pts.reduce((t,p)=>t+p.x*p.x,0);
+  const den=n*sxx-sx*sx;
+  if(!den) return null;
+  return { kgPerWeek:-((n*sxy-sx*sy)/den)*7, days, points:n };
+}
+function measuredMaintenance(intake, kgPerWeek){
+  if(!(intake>0) || kgPerWeek==null) return null;
+  const deficit=kgPerWeek*KCAL_PER_KG/7;
+  const maint=intake+deficit;
+  const bmrNow=(()=>{ const s=state.settings, cw=currentWeight();
+    return 10*cw+6.25*s.height-5*s.age+(s.gender==='male'?5:-161); })();
+  return { deficit, maint, bmr:bmrNow, mult:maint/bmrNow };
+}
 function lossRatePerWeek(s){ return s.dailyDeficit*7/KCAL_PER_KG; }
 function todayMultiplier(){ const dk=DAY_KEYS[new Date().getDay()]; return state.workouts.plan[dk]?.activityMult || state.settings.activityMultiplier; }
 function mifflinToday(weightKg){ const s=state.settings; const sexConst=s.gender==='male'?5:-161; const bmr=10*weightKg+6.25*s.height-5*s.age+sexConst; return bmr*todayMultiplier(); }
@@ -230,9 +260,10 @@ function dashboardMetrics(){
   const remaining = Math.max(0, cw - s.goalWeight);
   const span = s.startWeight - s.goalWeight;
   const pct = span>0 ? clamp((s.startWeight - cw)/span,0,1) : 0;
-  const rate = lossRatePerWeek(s);
+  const obs = observedRatePerWeek();                 // measured beats assumed
+  const rate = obs && obs.kgPerWeek>0 ? obs.kgPerWeek : lossRatePerWeek(s);
   return {
-    cw, maint, maintBase,
+    cw, maint, maintBase, rateObserved: !!(obs && obs.kgPerWeek>0), rateDays: obs?obs.days:0,
     deficitIntake: maint - s.dailyDeficit,
     maintIntake: maint,
     totalLost, remaining, pct, rate,
@@ -244,7 +275,8 @@ function goalProjection(){
   const s = state.settings;
   const cw = currentWeight();
   const span = cw - s.goalWeight;
-  const rate = lossRatePerWeek(s);
+  const obs = observedRatePerWeek();
+  const rate = obs && obs.kgPerWeek>0 ? obs.kgPerWeek : lossRatePerWeek(s);
   if(span<=0 || rate<=0) return { reached:true, deficitWeeks:0, calWeeks:0, goalDate:todayISO() };
   const deficitWeeks = span/rate;
   const calWeeks = deficitWeeks*(1 + 1/s.deficitWeeksPerBlock);
@@ -622,7 +654,7 @@ function renderDashboard(){
         <div class="d">Maint ${r0(m.maint)} − ${s.dailyDeficit}</div>
       </div>
       <div class="card metric">
-        <div class="k">Loss rate</div>
+        <div class="k">Actual loss rate</div>
         <div class="v">${r2(m.rate)}<small>${u()}/wk</small></div>
         <div class="d">${gp.reached?'Goal reached 🎉':'ETA '+fmtDate(gp.goalDate,{month:'short',day:'numeric'})}</div>
       </div>
@@ -632,6 +664,13 @@ function renderDashboard(){
   const wReached=wms.filter(m=>m.reached).length;
   const cur=wms.find(m=>!m.reached);            // current = first unreached milestone
   const cwNow=currentWeight();
+  // projected date for the next milestone — same basis as the goal projection, so the
+  // maintenance weeks in each block are counted, not just the deficit weeks
+  const msRate=lossRatePerWeek(s);
+  const msSpan=cur?Math.max(cwNow-cur.target,0):0;
+  const msDate=(cur&&msRate>0&&msSpan>0)
+    ? addDays(todayISO(), Math.round(msSpan/msRate*(1+1/s.deficitWeeksPerBlock)*7))
+    : null;
   const msBlock=`
     <div class="row-between" style="margin:22px 0 11px">
       <div class="section-title" style="margin:0">🏆 Milestone</div>
@@ -645,7 +684,7 @@ function renderDashboard(){
         <span class="msd-target">${cur.target}<small>${u()}</small></span>
       </div>
       <div class="msd-bar"><i style="width:${r0(cur.pct*100)}%"></i></div>
-      <div class="msd-sub">${r0(cur.pct*100)}% there · ${r1(Math.max(cwNow-cur.target,0))} ${u()} to go</div>
+      <div class="msd-sub">${r0(cur.pct*100)}% there · ${r1(Math.max(cwNow-cur.target,0))} ${u()} to go${msDate?' · eta '+fmtDate(msDate,{month:'short',day:'numeric'}):''}</div>
     </div>`:`
     <div class="msd reached">
       <div class="msd-top">
@@ -668,22 +707,11 @@ function renderDashboard(){
     </div>`;
 
   main().innerHTML=`
-    <button id="layout-edit-btn" class="btn sm" style="position:fixed;top:60px;right:14px;z-index:9000">✎ Edit layout</button>
-    <div class="greet-hero">
-      <div class="greet-char">
-        <img class="avatar" id="charImg" alt="" src="avatar.png?v=${AVATAR_REV}" style="image-rendering:pixelated">
-      </div>
-      <div class="greet-right">
-        <div class="greet-top-stickers">
-          <img src="lets-go-ro.png" class="sticker-letsgo" alt="Let's go, Ro!" style="image-rendering:pixelated">
-          <img src="cats.png" class="sticker-cats" alt="" style="image-rendering:pixelated">
-        </div>
-      </div>
-    </div>
 
     ${cards}
 
-    <div class="card week-card">
+    <div class="card week-card" style="--wk-size:${state.settings.weekHeadSize||12}px;--wk-x:${state.settings.weekHeadX||0}px;--wk-y:${state.settings.weekHeadY||0}px">
+      <div class="wk-guide"></div><div class="wk-guide-h"></div>
       <div class="week-card-head">
         <img src="flame${Math.min(Math.max(streak,1),10)}.png" class="wk-flame" alt="🔥" style="image-rendering:pixelated">
         <span class="wk-streak">Week streak</span>
@@ -704,6 +732,7 @@ function renderDashboard(){
   processAvatar();
   applyLayout();
   const leb=$('#layout-edit-btn'); if(leb) leb.onclick=editLayout;
+
 }
 
 /* ---------- draggable dashboard layout editor ---------- */
@@ -1288,6 +1317,15 @@ function renderSettings(){
     </div>
 
     <div class="card" style="margin-top:18px">
+      <div class="section-title" style="margin:0 0 12px">Measured maintenance</div>
+      <div class="note" style="margin:0 0 14px">The activity multiplier above is an estimate. Enter what you have actually been eating and this works your maintenance out from your logged weight change instead — no guessing.</div>
+      <div class="form">
+        ${F('s-intake','Average daily intake (kcal)',s.avgIntake||'','type="number" step="10"','your typical day over the logged period')}
+      </div>
+      <div id="mm-out" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
       <div class="section-title" style="margin:0 0 12px">Milestone targets</div>
       <div class="form">
         ${F('s-wmsstart','Weight milestone start ('+u()+')',s.weightMsStart,'type="number" step="0.1"','top of the 10 weight milestones')}
@@ -1332,6 +1370,47 @@ function renderSettings(){
     state.settings.waistGoal=parseFloat($('#s-waistgoal').value)||s.waistGoal;
     persist('settings'); toast('Targets saved'); renderSettings();
   };
+  // --- measured maintenance ---
+  const mmRender=()=>{
+    const box=$('#mm-out'); if(!box) return;
+    const obs=observedRatePerWeek();
+    const intake=parseFloat($('#s-intake').value);
+    if(!obs){
+      box.innerHTML=`<div class="note">Log weights across at least 14 days (3+ entries) and this will measure your rate automatically.</div>`;
+      return;
+    }
+    if(!(intake>0)){
+      box.innerHTML=`<div class="note">Measured loss so far: <b>${r2(obs.kgPerWeek)} ${u()}/wk</b> over ${obs.days} days (${obs.points} weigh-ins). Enter your average intake to get your maintenance.</div>`;
+      return;
+    }
+    const mm=measuredMaintenance(intake, obs.kgPerWeek);
+    const guess=mifflinMaintenance(currentWeight(), state.settings);
+    const diff=Math.round(mm.maint-guess);
+    box.innerHTML=`
+      <div class="grid cards">
+        <div class="card metric"><div class="k">Measured maintenance</div>
+          <div class="v">${r0(mm.maint)}<small>kcal</small></div>
+          <div class="d">${r2(obs.kgPerWeek)} ${u()}/wk over ${obs.days} days</div></div>
+        <div class="card metric"><div class="k">Implied multiplier</div>
+          <div class="v">${mm.mult.toFixed(2)}</div>
+          <div class="d">BMR ${r0(mm.bmr)} kcal</div></div>
+        <div class="card metric"><div class="k">Setting says</div>
+          <div class="v">${r0(guess)}<small>kcal</small></div>
+          <div class="d">${diff===0?'exact match':(diff>0?'under by '+Math.abs(diff):'over by '+Math.abs(diff))+' kcal'}</div></div>
+      </div>
+      <div class="form-actions" style="margin-top:12px">
+        <button class="btn primary" id="mm-apply">Use ${mm.mult.toFixed(2)} as my multiplier</button>
+      </div>`;
+    $('#mm-apply').onclick=()=>{
+      state.settings.activityMultiplier=+mm.mult.toFixed(3);
+      state.settings.avgIntake=intake;
+      persist('settings'); toast('Multiplier set from your own data'); renderSettings();
+    };
+  };
+  $('#s-intake').oninput=mmRender;
+  $('#s-intake').onchange=()=>{ state.settings.avgIntake=parseFloat($('#s-intake').value)||null; persist('settings'); };
+  mmRender();
+
   $('#s-export').onclick=()=>download('fat-loss-tracker-backup.json', JSON.stringify(state,null,2));
   $('#s-import').onchange=e=>{
     const f=e.target.files[0]; if(!f)return;

@@ -129,17 +129,23 @@ const SYNC={
   // devices' changes arrive without a manual pull. Saves via DB.save (not persist)
   // so applying the pull doesn't queue an echo push.
   async autoPull(){
-    const c=SYNC.cfg(); if(!c.auto||!SYNC.ready(c)) return false;
+    // runs whenever a connection is configured, auto-sync or not: merging is
+    // non-destructive, so there is no reason to make the user pull by hand.
+    const c=SYNC.cfg(); if(!SYNC.ready(c)) return false;
     try{
       const r=await fetch(`${SYNC.endpoint(c)}?id=eq.${encodeURIComponent(c.code)}&select=data,updated_at`,
         {headers:SYNC.headers(c)});
       if(!r.ok) return false;
       const rows=await r.json(); if(!rows.length) return false;
       const {data,updated_at}=rows[0];
-      if(c.last && new Date(updated_at) <= new Date(c.last)) return false;
-      SYNC_SLICES.forEach(k=>{ state[k]=SYNC.mergeSlice(k, data[k], state[k]); DB.save(k,state[k]); });
+      let changed=false;
+      SYNC_SLICES.forEach(k=>{
+        const before=JSON.stringify(state[k]);
+        state[k]=SYNC.mergeSlice(k, data[k], state[k]);
+        if(JSON.stringify(state[k])!==before){ changed=true; DB.save(k,state[k]); }
+      });
       c.last=new Date().toISOString(); SYNC.saveCfg(c);
-      return true;
+      return changed;
     }catch(e){ return false; }
   },
 

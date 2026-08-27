@@ -95,12 +95,30 @@ const SYNC={
     return true;
   },
 
+  // on load: adopt the cloud copy when it's newer than our last sync, so other
+  // devices' changes arrive without a manual pull. Saves via DB.save (not persist)
+  // so applying the pull doesn't queue an echo push.
+  async autoPull(){
+    const c=SYNC.cfg(); if(!c.auto||!SYNC.ready(c)) return false;
+    try{
+      const r=await fetch(`${SYNC.endpoint(c)}?id=eq.${encodeURIComponent(c.code)}&select=data,updated_at`,
+        {headers:SYNC.headers(c)});
+      if(!r.ok) return false;
+      const rows=await r.json(); if(!rows.length) return false;
+      const {data,updated_at}=rows[0];
+      if(c.last && new Date(updated_at) <= new Date(c.last)) return false;
+      SYNC_SLICES.forEach(k=>{ if(data[k]!=null){ state[k]=data[k]; DB.save(k,state[k]); } });
+      c.last=new Date().toISOString(); SYNC.saveCfg(c);
+      return true;
+    }catch(e){ return false; }
+  },
+
   // debounced background push, so a burst of edits sends once
   _t:null,
   queue(){
     const c=SYNC.cfg(); if(!c.auto||!SYNC.ready(c)) return;
     clearTimeout(SYNC._t);
-    SYNC._t=setTimeout(()=>SYNC.push().catch(e=>console.warn('sync:',e.message)), 2000);
+    SYNC._t=setTimeout(()=>SYNC.push().catch(e=>{ console.warn('sync:',e.message); toast('Cloud sync failed \u2014 '+e.message); }), 2000);
   },
 };
 
@@ -1925,3 +1943,4 @@ function bindGo(){ document.querySelectorAll('[data-go]').forEach(b=>b.onclick=(
 
 /* ---------- boot ---------- */
 go('dashboard');
+SYNC.autoPull().then(changed=>{ if(changed){ toast('Synced from cloud'); go(route); } });

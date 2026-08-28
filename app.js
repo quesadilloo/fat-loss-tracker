@@ -61,7 +61,7 @@ const DB = {
    tracked data to one Supabase row keyed by a sync code, pulling on load and
    pushing after changes. The anon key is public in a static app, so the sync code
    is the actual secret — keep it long and private. */
-const APP_VERSION='v71';
+const APP_VERSION='v72';
 const SYNC_SLICES=['settings','weights','activity','measures','diary','workouts','bank'];
 const SYNC={
   cfg(){ return DB.load('sync', {url:'',key:'',code:'',auto:false,last:null}); },
@@ -396,7 +396,7 @@ function dashboardMetrics(){
 // Goal projection: deficit weeks needed + maintenance breaks
 function goalProjection(){
   const s = state.settings;
-  const cw = currentWeight();
+  const cw = latestWeight();          // same anchor as the projection table
   const span = cw - s.goalWeight;
   const obs = observedRatePerWeek();
   const rate = obs && obs.kgPerWeek>0 ? obs.kgPerWeek : lossRatePerWeek(s);
@@ -411,10 +411,13 @@ function goalProjection(){
 // starting from the current week, so past weeks aren't re-counted.
 function projectionTable(){
   const s = state.settings;
-  const rate = lossRatePerWeek(s);
+  // measured rate beats the target when there's enough history, so the table
+  // matches the loss actually happening
+  const obs = observedRatePerWeek();
+  const rate = obs && obs.kgPerWeek>0 ? obs.kgPerWeek : lossRatePerWeek(s);
   const block = s.deficitWeeksPerBlock;
   const rows = [];
-  let wt = currentWeight();               // anchor to the latest 7-day average (real progress)
+  let wt = latestWeight();                // anchor to today's actual weigh-in
   const startWeek = currentWeekIndex();   // how many whole weeks since startDate (0-based)
   let reachedAt = null;
   for(let w=0; w<=52; w++){
@@ -1491,8 +1494,9 @@ function renderSettings(){
       </div>
     </div>`;
 
-  $('#s-save').onclick=()=>{
-    Object.assign(state.settings,{
+  // Settings write through on every edit — persist() also queues the cloud push,
+  // so a change made here reaches the other devices without pressing Save.
+  const collectMain=()=>Object.assign(state.settings,{
       name:$('#s-name').value.trim(),
       gender:$('#s-gender').value,
       height:parseFloat($('#s-height').value)||s.height,
@@ -1505,15 +1509,25 @@ function renderSettings(){
       deficitWeeksPerBlock:parseInt($('#s-block').value)||s.deficitWeeksPerBlock,
       startDate:$('#s-startdate').value||s.startDate,
     });
-    persist('settings'); toast('Settings saved'); renderSettings();
-  };
-  $('#s-save2').onclick=()=>{
+  const collectTargets=()=>{
     state.settings.weightMsStart=parseFloat($('#s-wmsstart').value)||s.weightMsStart;
     state.settings.weightMsGoal=parseFloat($('#s-wmsgoal').value)||s.weightMsGoal;
     state.settings.waistStart=parseFloat($('#s-waiststart').value)||s.waistStart;
     state.settings.waistGoal=parseFloat($('#s-waistgoal').value)||s.waistGoal;
-    persist('settings'); toast('Targets saved'); renderSettings();
   };
+  $('#s-save').onclick=()=>{ collectMain(); persist('settings'); toast('Settings saved'); renderSettings(); };
+  $('#s-save2').onclick=()=>{ collectTargets(); persist('settings'); toast('Targets saved'); renderSettings(); };
+
+  // autosave on field change (not per keystroke, and without re-rendering, so
+  // the field you're editing keeps focus)
+  const MAIN_F=['#s-name','#s-gender','#s-height','#s-age','#s-units','#s-start','#s-goal',
+                '#s-mult','#s-deficit','#s-block','#s-startdate'];
+  const TARG_F=['#s-wmsstart','#s-wmsgoal','#s-waiststart','#s-waistgoal'];
+  function syncDiagSaved(){ const c=SYNC.cfg();
+    toast(c.auto&&SYNC.ready(c) ? 'Saved \u00b7 syncing\u2026' : 'Saved'); }
+  const autosave=(fields,collect)=>fields.forEach(sel=>{ const el=$(sel); if(!el) return;
+    el.addEventListener('change',()=>{ collect(); persist('settings'); syncDiagSaved(); }); });
+  autosave(MAIN_F,collectMain); autosave(TARG_F,collectTargets);
   // --- measured maintenance ---
   const mmRender=()=>{
     const box=$('#mm-out'); if(!box) return;
